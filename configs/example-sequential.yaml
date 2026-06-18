@@ -1,0 +1,43 @@
+# Sequential pattern: a fixed pipeline of agents, with an optional loop
+# around a subset of steps (here: draft <-> review, until the critic approves).
+name: research-report-pipeline
+pattern: sequential
+
+llm:
+  provider: anthropic
+  model: claude-sonnet-4-6
+  apiKeyEnv: ANTHROPIC_API_KEY
+  maxTokens: 1500
+  temperature: 0.7
+
+goal: "Explain the impact of microplastics on marine ecosystems"
+
+agents:
+  - id: researcher
+    role: "Research Agent"
+    promptFile: ../prompts/researcher.md
+  - id: writer
+    role: "Writer Agent"
+    promptFile: ../prompts/writer.md
+  - id: critic
+    role: "Critic Agent"
+    promptFile: ../prompts/critic.md
+
+workflow:
+  steps:
+    - agent: researcher
+      input: "{{goal}}"
+      output: notes
+    - agent: writer
+      input: "Topic: {{goal}}\n\nResearch notes:\n{{notes}}\n\nCritic feedback from previous draft (empty if this is the first draft):\n{{review}}"
+      output: draft
+    - agent: critic
+      input: "{{draft}}"
+      output: review
+
+  # Repeat the writer/critic exchange until the critic approves, or a
+  # maximum of 3 iterations is reached.
+  loop:
+    steps: [draft, review]
+    until: "vars.review.includes('APPROVED')"
+    maxIterations: 3

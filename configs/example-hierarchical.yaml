@@ -1,0 +1,39 @@
+# Hierarchical pattern: a root supervisor delegates to team-lead agents,
+# each of which is itself a supervisor over its own worker agents.
+name: product-launch-org
+pattern: hierarchical
+
+llm:
+  model: claude-sonnet-4-6
+  apiKeyEnv: ANTHROPIC_API_KEY
+  maxTokens: 4096
+
+goal: "Plan the launch of a new mobile app feature: a built-in habit tracker"
+
+agents:
+  - id: ceo
+    promptFile: ../prompts/ceo.md
+    isSupervisor: true
+    team: [eng_lead, design_lead]
+
+  - id: eng_lead
+    promptFile: ../prompts/team_lead.md
+    isSupervisor: true
+    team: [coder, tester]
+  - id: coder
+    promptFile: ../prompts/coder.md
+  - id: tester
+    promptFile: ../prompts/tester.md
+
+  - id: design_lead
+    promptFile: ../prompts/team_lead.md
+    isSupervisor: true
+    team: [designer]
+  - id: designer
+    promptFile: ../prompts/designer.md
+
+hierarchical:
+  rootSupervisor: ceo
+  input: "{{goal}}"
+  maxTurns: 6
+  output: final_output

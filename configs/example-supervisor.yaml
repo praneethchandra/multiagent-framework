@@ -1,0 +1,30 @@
+# Supervisor / orchestrator-worker pattern: one supervisor agent decides,
+# turn by turn, which worker to call and when the task is done.
+name: code-and-test-team
+pattern: supervisor
+
+llm:
+  model: claude-sonnet-4-6
+  apiKeyEnv: ANTHROPIC_API_KEY
+  maxTokens: 4096
+
+goal: "Write a TypeScript function `isPalindrome(s: string): boolean` and unit tests for it"
+
+agents:
+  - id: lead
+    role: "Supervisor"
+    promptFile: ../prompts/supervisor.md
+    isSupervisor: true
+  - id: coder
+    role: "Coder"
+    promptFile: ../prompts/coder.md
+  - id: tester
+    role: "Tester"
+    promptFile: ../prompts/tester.md
+
+supervisorConfig:
+  supervisor: lead
+  workers: [coder, tester]
+  input: "{{goal}}"
+  maxTurns: 8
+  output: final_output

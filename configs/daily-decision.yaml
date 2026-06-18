@@ -1,0 +1,32 @@
+# Daily decision-making helper (parallel pattern): three agents independently
+# weigh in on a decision from different angles, then a synthesizer gives you
+# one clear recommendation.
+#
+# Usage: edit the `goal` line below to whatever you're deciding today, then:
+#   npm run run -- configs/daily-decision.yaml --output final_output
+name: daily-decision-helper
+pattern: parallel
+
+llm:
+  model: claude-sonnet-4-6
+  apiKeyEnv: ANTHROPIC_API_KEY
+  maxTokens: 800
+  temperature: 0.7
+
+goal: "Should I switch from my current apartment to one that's $300/month more but a 10 minute walk to work instead of a 40 minute commute?"
+
+agents:
+  - id: pragmatist
+    promptFile: ../prompts/pragmatist.md
+  - id: risk_analyst
+    promptFile: ../prompts/risk_analyst.md
+  - id: opportunity_scout
+    promptFile: ../prompts/opportunity_scout.md
+  - id: decision_synthesizer
+    promptFile: ../prompts/decision_synthesizer.md
+
+parallel:
+  agents: [pragmatist, risk_analyst, opportunity_scout]
+  input: "{{goal}}"
+  aggregator: decision_synthesizer
+  output: final_output

@@ -1,0 +1,24 @@
+# Parallel (fan-out / fan-in) pattern: several agents tackle the same input
+# concurrently; an aggregator agent combines their outputs into one result.
+name: multi-perspective-analysis
+pattern: parallel
+
+llm:
+  model: claude-sonnet-4-6
+  apiKeyEnv: ANTHROPIC_API_KEY
+
+goal: "Should our startup adopt a 4-day work week?"
+
+agents:
+  - id: optimist
+    promptFile: ../prompts/optimist.md
+  - id: skeptic
+    promptFile: ../prompts/skeptic.md
+  - id: synthesizer
+    promptFile: ../prompts/synthesizer.md
+
+parallel:
+  agents: [optimist, skeptic]
+  input: "{{goal}}"
+  aggregator: synthesizer
+  output: final_output
