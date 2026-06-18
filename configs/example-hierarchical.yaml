@@ -12,24 +12,30 @@ goal: "Plan the launch of a new mobile app feature: a built-in habit tracker"
 
 agents:
   - id: ceo
+    description: "Coordinates engineering and design leads to plan a feature launch"
     promptFile: ../prompts/ceo.md
     isSupervisor: true
     team: [eng_lead, design_lead]
 
   - id: eng_lead
+    description: "Leads the engineering team: implementation and testing"
     promptFile: ../prompts/team_lead.md
     isSupervisor: true
     team: [coder, tester]
   - id: coder
+    description: "Writes implementation code given a spec"
     promptFile: ../prompts/coder.md
   - id: tester
+    description: "Writes tests for a given piece of code"
     promptFile: ../prompts/tester.md
 
   - id: design_lead
+    description: "Leads the design team: UX flows and visual design"
     promptFile: ../prompts/team_lead.md
     isSupervisor: true
     team: [designer]
   - id: designer
+    description: "Produces UX flows, copy, and layout descriptions"
     promptFile: ../prompts/designer.md
 
 hierarchical:

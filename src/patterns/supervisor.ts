@@ -1,7 +1,16 @@
-import { Agent } from "../agent.js";
+import { Agent, validateFinish } from "../agent.js";
 import { SupervisorConfig, RunContext } from "../types.js";
 import { renderTemplate } from "../template.js";
 import { parseDecision } from "../protocol.js";
+
+// Builds the worker roster purely from config (id + description) -- the
+// supervisor's prompt and this code never hardcode which agents exist or
+// what they're for. Adding worker #51 is just another agents[] entry; the
+// supervisor selects between them via its own LLM judgment, not branching
+// logic here.
+function buildRoster(workerIds: string[], agents: Map<string, Agent>): string {
+  return workerIds.map((id) => `- ${id}: ${agents.get(id)!.description}`).join("\n");
+}
 
 export async function runSupervisor(
   config: SupervisorConfig,
@@ -16,7 +25,7 @@ export async function runSupervisor(
   }
 
   const initialInput = renderTemplate(config.input, ctx);
-  let transcript = `Task: ${initialInput}\nAvailable workers: ${config.workers.join(", ")}`;
+  let transcript = `Task: ${initialInput}\nAvailable workers:\n${buildRoster(config.workers, agents)}`;
   let turn = 0;
 
   while (turn < config.maxTurns) {
@@ -26,6 +35,11 @@ export async function runSupervisor(
     const decision = parseDecision(raw, "WORKER");
 
     if (decision.action === "finish") {
+      const { accept, note } = await validateFinish(supervisor, ctx, decision.payload, log);
+      if (!accept) {
+        transcript += note;
+        continue;
+      }
       ctx.vars[config.output] = decision.payload;
       log(`supervisor finished after ${turn} turn(s)`);
       return ctx;
@@ -35,8 +49,10 @@ export async function runSupervisor(
       const worker = decision.target ? agents.get(decision.target) : undefined;
       if (!worker) throw new Error(`Supervisor requested unknown/missing worker: ${decision.target}`);
       log(`-> [${worker.id}] ${decision.payload}`);
-      const workerOutput = await worker.run(decision.payload);
-      transcript += `\n\n[${worker.id} responded]:\n${workerOutput}`;
+      const result = await worker.execute(ctx, decision.payload, log);
+      transcript += result.skipped
+        ? `\n\n[${worker.id} declined]: its shouldExecute condition was not met for this request.`
+        : `\n\n[${worker.id} responded]:\n${result.output}`;
       continue;
     }
 

@@ -11,11 +11,18 @@ export function renderTemplate(template: string, ctx: RunContext): string {
   });
 }
 
-// Evaluates a small boolean expression against the run context, e.g.
-//   "vars.review.includes('APPROVED')"
+// Evaluates a small JS expression against an arbitrary scope of named values,
+// e.g. evalExpr("output.length > 20", { output, vars, goal }).
 // This is intentionally a thin sandbox: configs are authored by the same
 // person running the framework, not untrusted third parties.
+export function evalExpr(expr: string, scope: Record<string, unknown>): unknown {
+  const keys = Object.keys(scope);
+  const fn = new Function(...keys, `return (${expr});`);
+  return fn(...keys.map((k) => scope[k]));
+}
+
+// Evaluates a boolean expression against the run context (`vars`, `goal` in
+// scope), e.g. "vars.review.includes('APPROVED')".
 export function evalCondition(expr: string, ctx: RunContext): boolean {
-  const fn = new Function("vars", "goal", `return Boolean(${expr});`);
-  return fn(ctx.vars, ctx.goal);
+  return Boolean(evalExpr(expr, { vars: ctx.vars, goal: ctx.goal }));
 }

@@ -11,11 +11,21 @@ goal: "Should our startup adopt a 4-day work week?"
 
 agents:
   - id: optimist
+    description: "Analyzes a question from an opportunity-focused angle"
     promptFile: ../prompts/optimist.md
   - id: skeptic
+    description: "Analyzes a question from a risk-focused angle"
     promptFile: ../prompts/skeptic.md
   - id: synthesizer
+    description: "Combines several independent analyses into one balanced summary"
     promptFile: ../prompts/synthesizer.md
+    # The synthesis itself must actually reference both perspectives, not
+    # just restate one side.
+    validate:
+      type: llm
+      criteria: "The summary must acknowledge both upside and downside considerations, not just one side."
+      maxRetries: 1
+      onFail: warn
 
 parallel:
   agents: [optimist, skeptic]

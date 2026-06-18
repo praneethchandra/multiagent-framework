@@ -63,12 +63,15 @@ llm:                         # optional, these are the defaults
 agents:                      # every agent used anywhere in the config
   - id: my_agent              # referenced elsewhere by this id
     role: "Human-readable name"   # optional, defaults to id
+    description: "What this agent does, in one line"  # see Section 6
     prompt: "inline system prompt"        # OR...
     promptFile: prompts/my_agent.md       # ...path relative to this config file
     model: claude-haiku-4-5               # optional, overrides llm.model for just this agent
     isSupervisor: true                    # supervisor/hierarchical patterns only
     workers: [a, b]                       # supervisor pattern: ids this agent may call
     team: [a, b]                          # hierarchical pattern: ids this agent may delegate to
+    shouldExecute: "..."                  # see Section 7
+    validate: { ... }                     # see Section 8
 ```
 
 Each agent needs exactly one of `prompt` (inline) or `promptFile` (external
@@ -146,7 +149,81 @@ RESULT:
 (`hierarchical` uses `ACTION: delegate` / `MEMBER:` instead of `ACTION: call`
 / `WORKER:` — see `prompts/ceo.md` and `prompts/team_lead.md`.)
 
-## 6. Running it
+## 6. Keeping supervisors thin as agent count grows
+
+A supervisor's prompt file (`prompts/supervisor.md` / `team_lead.md` /
+`ceo.md`) never lists worker ids or describes what they do — that would mean
+editing the supervisor's prompt every time you add an agent. Instead, each
+agent declares its own `description`, and the orchestrator builds the
+worker/team roster from config at runtime:
+
+```yaml
+agents:
+  - id: coder
+    description: "Writes TypeScript implementation code given a spec"
+  - id: tester
+    description: "Writes unit tests for a given piece of code"
+```
+
+The supervisor sees a generated roster (`- coder: Writes TypeScript...`,
+`- tester: Writes unit tests...`) and picks based on those descriptions using
+its own judgment. Going from 3 workers to 50 means adding 47 `agents[]`
+entries with descriptions — the supervisor's prompt and the orchestrator code
+that builds the roster both stay exactly the same size.
+
+## 7. `shouldExecute` — agents own their own eligibility
+
+Add `shouldExecute` to any agent to give it a guard condition, evaluated
+against `vars` and `goal`, that decides whether it's willing to run at all:
+
+```yaml
+agents:
+  - id: tester
+    shouldExecute: "goal.toLowerCase().includes('test')"
+```
+
+If the condition is false, the framework skips calling the model entirely —
+the agent is reported as having "declined." In `supervisor`/`hierarchical`
+patterns, a decline is reported back to the calling supervisor as a message
+(`"[tester declined]: its shouldExecute condition was not met"`), so the
+supervisor can route to someone else. The supervisor's prompt and code never
+encode *why* an agent might decline — that logic lives entirely with the
+agent that owns it.
+
+## 8. `validate` — agents check their own output before it goes upstream
+
+Add `validate` to any agent to make it check its own output before handing
+it to whatever's downstream (the next pipeline step, the calling supervisor,
+or the aggregator):
+
+```yaml
+agents:
+  - id: coder
+    validate:
+      type: rule                 # "rule" (JS expression) or "llm" (LLM judge)
+      rule: "output.includes('function')"
+      maxRetries: 1               # re-prompt the agent with feedback this many times
+      onFail: warn                # "warn" (log + proceed) or "fail" (throw)
+```
+
+For `type: llm`, use `criteria` (plain English) instead of `rule`:
+
+```yaml
+validate:
+  type: llm
+  criteria: "Must acknowledge both upside and downside considerations."
+  onFail: warn
+```
+
+On failure, if `maxRetries > 0` the agent is re-prompted with the rejection
+reason appended and tries again; once retries are exhausted, `onFail: fail`
+throws (stopping the run) or `onFail: warn` logs a warning and the output is
+passed through anyway. This is opt-in and entirely per-agent — an agent with
+no `validate` block always passes through unchecked, and no caller (sequential
+step, supervisor, aggregator) needs to know or care which agents validate
+themselves.
+
+## 9. Running it
 
 ```
 npm run run -- <path-to-config.yaml> [--output <varName>]
@@ -157,7 +234,7 @@ CLI at any config file that follows this syntax and it executes that
 multi-agent system end to end, printing every variable produced (or just one,
 with `--output`).
 
-## Pattern-specific config reference
+## 10. Pattern-specific config reference
 
 ### `parallel`
 

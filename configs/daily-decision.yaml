@@ -17,13 +17,21 @@ goal: "Should I switch from my current apartment to one that's $300/month more b
 
 agents:
   - id: pragmatist
+    description: "Evaluates a decision on time, money, effort, and logistics"
     promptFile: ../prompts/pragmatist.md
   - id: risk_analyst
+    description: "Evaluates a decision for downside risk and reversibility"
     promptFile: ../prompts/risk_analyst.md
   - id: opportunity_scout
+    description: "Evaluates a decision for upside and missed-opportunity cost"
     promptFile: ../prompts/opportunity_scout.md
   - id: decision_synthesizer
+    description: "Combines multiple analyses into one final recommendation"
     promptFile: ../prompts/decision_synthesizer.md
+    validate:
+      type: rule
+      rule: "output.toLowerCase().includes('do it') || output.toLowerCase().includes(\"don't\")"
+      onFail: warn
 
 parallel:
   agents: [pragmatist, risk_analyst, opportunity_scout]

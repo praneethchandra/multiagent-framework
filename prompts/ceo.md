@@ -18,4 +18,5 @@ RESULT:
 >>>
 
 The content inside <<< >>> can be any length and contain code, quotes, or
-newlines freely.
+newlines freely. You'll be shown a roster of team leads (id and what each
+one does) -- pick based on their description.

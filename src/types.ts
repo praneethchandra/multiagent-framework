@@ -8,15 +8,36 @@ export const LlmConfigSchema = z.object({
   temperature: z.number().default(1),
 });
 
+export const ValidateConfigSchema = z.object({
+  // "rule": a JS boolean expression evaluated with `output`, `vars`, `goal` in scope.
+  // "llm": an LLM judge call checking `output` against a plain-English `criteria`.
+  type: z.enum(["rule", "llm"]).default("rule"),
+  rule: z.string().optional(),
+  criteria: z.string().optional(),
+  maxRetries: z.number().default(0), // re-run the agent with feedback this many times if invalid
+  onFail: z.enum(["fail", "warn"]).default("warn"), // behavior once retries are exhausted and still invalid
+});
+
 export const AgentConfigSchema = z.object({
   id: z.string(),
   role: z.string().optional(),
+  // Short capability blurb. Supervisors render this into the worker roster
+  // they show the LLM -- adding agent #51 never touches supervisor logic,
+  // it's purely additive config.
+  description: z.string().optional(),
   prompt: z.string().optional(), // inline system prompt
   promptFile: z.string().optional(), // path to a prompt file, relative to config file
   model: z.string().optional(), // overrides llm.model for this agent
   isSupervisor: z.boolean().default(false),
   workers: z.array(z.string()).optional(), // worker agent ids (supervisor pattern)
   team: z.array(z.string()).optional(), // nested team member ids (hierarchical pattern)
+  // Owned entirely by the agent: a guard condition checked before it runs.
+  // The supervisor/orchestrator never decides eligibility -- it just asks,
+  // and the framework enforces this gate on the agent's behalf.
+  shouldExecute: z.string().optional(), // JS boolean expression, `vars`/`goal` in scope
+  // Owned entirely by the agent: validates its own output before it's
+  // handed upstream to a caller (supervisor, next pipeline step, aggregator).
+  validate: ValidateConfigSchema.optional(),
 });
 
 export const StepSchema = z.object({
@@ -79,6 +100,7 @@ export const AppConfigSchema = z.object({
 });
 
 export type LlmConfig = z.infer<typeof LlmConfigSchema>;
+export type ValidateConfig = z.infer<typeof ValidateConfigSchema>;
 export type AgentConfig = z.infer<typeof AgentConfigSchema>;
 export type Step = z.infer<typeof StepSchema>;
 export type LoopConfig = z.infer<typeof LoopConfigSchema>;

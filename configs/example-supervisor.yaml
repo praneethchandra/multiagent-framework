@@ -17,10 +17,25 @@ agents:
     isSupervisor: true
   - id: coder
     role: "Coder"
+    description: "Writes TypeScript implementation code given a spec"
     promptFile: ../prompts/coder.md
+    # Owned by the coder agent itself: its own output must actually contain
+    # an implementation before it's handed back to the supervisor.
+    validate:
+      type: rule
+      rule: "output.toLowerCase().includes('function') || output.includes('=>')"
+      onFail: warn
   - id: tester
     role: "Tester"
+    description: "Writes unit tests for a given piece of code"
     promptFile: ../prompts/tester.md
+    # The tester agent declines work that isn't actually a testing request --
+    # the supervisor doesn't need to know or encode this rule itself.
+    shouldExecute: "goal.toLowerCase().includes('test')"
+    validate:
+      type: rule
+      rule: "output.toLowerCase().includes('test')"
+      onFail: warn
 
 supervisorConfig:
   supervisor: lead

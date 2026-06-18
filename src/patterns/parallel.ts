@@ -18,15 +18,26 @@ export async function runParallel(
 
   const input = renderTemplate(config.input, ctx);
   log(`-> fanning out to [${workers.map((w) => w.id).join(", ")}]`);
-  const results = await Promise.all(workers.map((w) => w.run(input)));
+  const results = await Promise.all(workers.map((w) => w.execute(ctx, input, log)));
 
-  const combined = results
-    .map((r, i) => `### Response from ${workers[i].id}\n${r}`)
-    .join("\n\n");
+  const usable = results
+    .map((r, i) => ({ worker: workers[i], result: r }))
+    .filter(({ result }) => !result.skipped);
 
-  log(`-> [${aggregator.id}] aggregating ${results.length} responses`);
-  const aggregated = await aggregator.run(`Original task: ${input}\n\n${combined}`);
+  if (usable.length === 0) {
+    throw new Error(
+      `All agents in parallel.agents (${config.agents.join(", ")}) declined to run (shouldExecute=false); nothing to aggregate`,
+    );
+  }
 
-  ctx.vars[config.output] = aggregated;
+  const combined = usable.map(({ worker, result }) => `### Response from ${worker.id}\n${result.output}`).join("\n\n");
+
+  log(`-> [${aggregator.id}] aggregating ${usable.length} response(s)`);
+  const aggResult = await aggregator.execute(ctx, `Original task: ${input}\n\n${combined}`, log);
+  if (aggResult.skipped) {
+    throw new Error(`Aggregator "${aggregator.id}" declined to run (shouldExecute=false)`);
+  }
+
+  ctx.vars[config.output] = aggResult.output;
   return ctx;
 }

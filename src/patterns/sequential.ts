@@ -7,9 +7,13 @@ async function runStep(step: Step, agents: Map<string, Agent>, ctx: RunContext, 
   if (!agent) throw new Error(`Unknown agent "${step.agent}" referenced in workflow step`);
   const input = renderTemplate(step.input, ctx);
   log(`-> [${agent.id}] received input`);
-  const output = await agent.run(input);
-  ctx.vars[step.output] = output;
-  log(`<- [${agent.id}] produced "${step.output}" (${output.length} chars)`);
+  const result = await agent.execute(ctx, input, log);
+  ctx.vars[step.output] = result.skipped ? "" : result.output;
+  log(
+    result.skipped
+      ? `<- [${agent.id}] skipped (shouldExecute condition not met)`
+      : `<- [${agent.id}] produced "${step.output}" (${result.output.length} chars, ${result.attempts} attempt(s))`,
+  );
 }
 
 export async function runSequential(

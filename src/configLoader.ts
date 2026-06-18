@@ -10,7 +10,21 @@ export function loadConfig(configPath: string): { config: AppConfig; baseDir: st
   const config = AppConfigSchema.parse(parsed);
   const baseDir = path.dirname(absPath);
   validatePatternConfig(config);
+  validateAgentConfigs(config);
   return { config, baseDir };
+}
+
+function validateAgentConfigs(config: AppConfig) {
+  for (const agent of config.agents) {
+    const v = agent.validate;
+    if (!v) continue;
+    if (v.type === "rule" && !v.rule) {
+      throw new Error(`agent "${agent.id}": validate.type is "rule" but validate.rule is missing`);
+    }
+    if (v.type === "llm" && !v.criteria) {
+      throw new Error(`agent "${agent.id}": validate.type is "llm" but validate.criteria is missing`);
+    }
+  }
 }
 
 function validatePatternConfig(config: AppConfig) {

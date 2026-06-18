@@ -15,12 +15,21 @@ goal: "Explain the impact of microplastics on marine ecosystems"
 agents:
   - id: researcher
     role: "Research Agent"
+    description: "Gathers bullet-point research findings on a topic"
     promptFile: ../prompts/researcher.md
+    # Each agent owns its own output bar: research notes must have real
+    # substance before being handed to the writer.
+    validate:
+      type: rule
+      rule: "output.length > 200"
+      onFail: warn
   - id: writer
     role: "Writer Agent"
+    description: "Turns research notes into a polished short report"
     promptFile: ../prompts/writer.md
   - id: critic
     role: "Critic Agent"
+    description: "Reviews a draft report and approves it or requests changes"
     promptFile: ../prompts/critic.md
 
 workflow:
