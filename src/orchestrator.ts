@@ -1,5 +1,6 @@
 import { AppConfig, RunContext } from "./types.js";
 import { buildAgentMap } from "./agent.js";
+import { buildToolRegistry } from "./tools.js";
 import { runSequential } from "./patterns/sequential.js";
 import { runSupervisor } from "./patterns/supervisor.js";
 import { runParallel } from "./patterns/parallel.js";
@@ -10,7 +11,8 @@ export async function runApp(
   baseDir: string,
   log: (s: string) => void = console.log,
 ): Promise<RunContext> {
-  const agents = buildAgentMap(config.agents, config.llm, baseDir);
+  const toolRegistry = buildToolRegistry(config.tools, baseDir);
+  const agents = buildAgentMap(config.agents, config.llm, baseDir, toolRegistry);
   const agentConfigs = new Map(config.agents.map((a) => [a.id, a]));
   const ctx: RunContext = { vars: {}, goal: config.goal, tokenUsage: { input: 0, output: 0 } };
 

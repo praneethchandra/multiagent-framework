@@ -7,7 +7,7 @@ import fs from "node:fs";
 export interface TraceEvent {
   ts: string;
   agentId: string;
-  event: "call" | "validate";
+  event: "call" | "validate" | "tool";
   attempt?: number;
   latencyMs: number;
   inputTokens?: number;

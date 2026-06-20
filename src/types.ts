@@ -18,6 +18,17 @@ export const ValidateConfigSchema = z.object({
   onFail: z.enum(["fail", "warn"]).default("warn"), // behavior once retries are exhausted and still invalid
 });
 
+// Built-in tool types. Each is deliberately narrow and safe-by-construction
+// rather than a general escape hatch (e.g. calculator only ever evaluates
+// arithmetic; http_get/file_read are scoped by an explicit allow-list).
+export const ToolConfigSchema = z.object({
+  id: z.string(),
+  type: z.enum(["calculator", "http_get", "file_read"]),
+  description: z.string(), // shown to the model verbatim as the tool's description
+  allowedDomains: z.array(z.string()).optional(), // http_get only
+  baseDir: z.string().optional(), // file_read only; relative to the config file's directory
+});
+
 export const AgentConfigSchema = z.object({
   id: z.string(),
   role: z.string().optional(),
@@ -38,6 +49,14 @@ export const AgentConfigSchema = z.object({
   // Owned entirely by the agent: validates its own output before it's
   // handed upstream to a caller (supervisor, next pipeline step, aggregator).
   validate: ValidateConfigSchema.optional(),
+  // Least privilege (spec #11): an explicit allow-list of top-level tools[]
+  // ids this agent may call. A tool not listed here is never even sent to
+  // the model for this agent -- there's no way for it to be invoked.
+  tools: z.array(z.string()).default([]),
+  // Hard turn budget for this agent's own ReAct (Thought/Action/Observation)
+  // loop, separate from any pattern-level maxTurns -- bounds how many
+  // tool-call round-trips a single agent invocation can make.
+  maxToolTurns: z.number().default(6),
 });
 
 export const StepSchema = z.object({
@@ -117,6 +136,7 @@ export const AppConfigSchema = z.object({
   goal: z.string(),
   llm: LlmConfigSchema.default({}),
   agents: z.array(AgentConfigSchema),
+  tools: z.array(ToolConfigSchema).default([]), // top-level tool registry; agents opt in via agents[].tools
   workflow: WorkflowSchema.optional(), // used by "sequential"
   parallel: ParallelConfigSchema.optional(), // used by "parallel"
   supervisorConfig: SupervisorConfigSchema.optional(), // used by "supervisor"
@@ -125,6 +145,7 @@ export const AppConfigSchema = z.object({
 
 export type LlmConfig = z.infer<typeof LlmConfigSchema>;
 export type ValidateConfig = z.infer<typeof ValidateConfigSchema>;
+export type ToolConfig = z.infer<typeof ToolConfigSchema>;
 export type AgentConfig = z.infer<typeof AgentConfigSchema>;
 export type Step = z.infer<typeof StepSchema>;
 export type LoopConfig = z.infer<typeof LoopConfigSchema>;

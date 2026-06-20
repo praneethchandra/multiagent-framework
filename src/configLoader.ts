@@ -11,18 +11,37 @@ export function loadConfig(configPath: string): { config: AppConfig; baseDir: st
   const baseDir = path.dirname(absPath);
   validatePatternConfig(config);
   validateAgentConfigs(config);
+  validateToolConfigs(config);
   return { config, baseDir };
 }
 
 function validateAgentConfigs(config: AppConfig) {
+  const toolIds = new Set(config.tools.map((t) => t.id));
   for (const agent of config.agents) {
     const v = agent.validate;
-    if (!v) continue;
-    if (v.type === "rule" && !v.rule) {
-      throw new Error(`agent "${agent.id}": validate.type is "rule" but validate.rule is missing`);
+    if (v) {
+      if (v.type === "rule" && !v.rule) {
+        throw new Error(`agent "${agent.id}": validate.type is "rule" but validate.rule is missing`);
+      }
+      if (v.type === "llm" && !v.criteria) {
+        throw new Error(`agent "${agent.id}": validate.type is "llm" but validate.criteria is missing`);
+      }
     }
-    if (v.type === "llm" && !v.criteria) {
-      throw new Error(`agent "${agent.id}": validate.type is "llm" but validate.criteria is missing`);
+    for (const toolId of agent.tools) {
+      if (!toolIds.has(toolId)) {
+        throw new Error(`agent "${agent.id}" references unknown tool "${toolId}" -- not found in top-level "tools[]"`);
+      }
+    }
+  }
+}
+
+function validateToolConfigs(config: AppConfig) {
+  for (const tool of config.tools) {
+    if (tool.type === "http_get" && (!tool.allowedDomains || tool.allowedDomains.length === 0)) {
+      throw new Error(`tool "${tool.id}" (http_get) must set "allowedDomains" -- an unrestricted http_get tool is a security hole`);
+    }
+    if (tool.type === "file_read" && !tool.baseDir) {
+      throw new Error(`tool "${tool.id}" (file_read) must set "baseDir" -- an unrestricted file_read tool is a security hole`);
     }
   }
 }

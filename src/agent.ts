@@ -1,8 +1,10 @@
+import Anthropic from "@anthropic-ai/sdk";
 import { AgentConfig, LlmConfig, RunContext, ValidateConfig } from "./types.js";
 import { resolvePrompt } from "./configLoader.js";
-import { callModel } from "./llmClient.js";
+import { callModel, callSingle } from "./llmClient.js";
 import { evalExpr } from "./template.js";
 import { trace } from "./trace.js";
+import { ToolDef, wrapToolResult } from "./tools.js";
 
 const JUDGE_SYSTEM_PROMPT = `You are a strict QA checker. You are given a set of criteria and a piece of
 output to evaluate against them. Respond with exactly "APPROVED" if the
@@ -33,8 +35,10 @@ export class Agent {
   private readonly modelOverride?: string;
   private readonly shouldExecuteExpr?: string;
   private readonly validateCfg?: ValidateConfig;
+  private readonly tools: ToolDef[];
+  private readonly maxToolTurns: number;
 
-  constructor(config: AgentConfig, llm: LlmConfig, baseDir: string) {
+  constructor(config: AgentConfig, llm: LlmConfig, baseDir: string, toolRegistry: Map<string, ToolDef>) {
     this.id = config.id;
     this.role = config.role ?? config.id;
     this.description = config.description ?? this.role;
@@ -43,6 +47,11 @@ export class Agent {
     this.modelOverride = config.model;
     this.shouldExecuteExpr = config.shouldExecute;
     this.validateCfg = config.validate;
+    // Least privilege (spec #11): resolved strictly from this agent's own
+    // allow-list. A tool this agent didn't list is never even constructed
+    // into its tool set -- there is no path for it to be called.
+    this.tools = config.tools.map((id) => toolRegistry.get(id)!);
+    this.maxToolTurns = config.maxToolTurns;
   }
 
   // Raw, unvalidated, throwing call -- used for protocol-driven control-flow
@@ -53,7 +62,7 @@ export class Agent {
   // track still compile -- every pattern in this codebase passes it.
   async run(message: string, ctx?: RunContext): Promise<string> {
     const start = Date.now();
-    const result = await callModel(this.llm, this.systemPrompt, message, this.modelOverride);
+    const result = await callSingle(this.llm, this.systemPrompt, message, this.modelOverride);
     if (ctx) {
       ctx.tokenUsage.input += result.inputTokens;
       ctx.tokenUsage.output += result.outputTokens;
@@ -69,6 +78,81 @@ export class Agent {
       output: result.text,
     });
     return result.text;
+  }
+
+  // The ReAct loop (Thought/Action/Observation): used instead of run() when
+  // this agent has tools configured. The model alternates between plain-text
+  // reasoning and tool_use requests; each tool result is executed, wrapped
+  // as untrusted data, and fed back as an Observation, until the model
+  // responds with no further tool calls (Loop-until-Done's exit condition)
+  // or maxToolTurns is exhausted (the hard turn budget every loop needs).
+  private async runReAct(initialMessage: string, ctx: RunContext, log: (s: string) => void): Promise<string> {
+    const messages: Anthropic.MessageParam[] = [{ role: "user", content: initialMessage }];
+    const anthropicTools: Anthropic.Tool[] = this.tools.map((t) => ({
+      name: t.id,
+      description: t.description,
+      input_schema: t.inputSchema as Anthropic.Tool.InputSchema,
+    }));
+
+    let turn = 0;
+    while (turn < this.maxToolTurns) {
+      turn++;
+      const start = Date.now();
+      const result = await callModel(this.llm, this.systemPrompt, messages, this.modelOverride, anthropicTools);
+      ctx.tokenUsage.input += result.inputTokens;
+      ctx.tokenUsage.output += result.outputTokens;
+      trace({
+        ts: new Date().toISOString(),
+        agentId: this.id,
+        event: "call",
+        attempt: turn,
+        latencyMs: Date.now() - start,
+        inputTokens: result.inputTokens,
+        outputTokens: result.outputTokens,
+        input: turn === 1 ? initialMessage : "(tool results from previous turn)",
+        output: result.text || "(tool call, no text)",
+      });
+
+      if (result.toolUses.length === 0) {
+        return result.text; // no more actions requested -> done
+      }
+
+      messages.push({ role: "assistant", content: result.contentBlocks });
+
+      const toolResultBlocks: Anthropic.ToolResultBlockParam[] = [];
+      for (const toolUse of result.toolUses) {
+        const toolDef = this.tools.find((t) => t.id === toolUse.name);
+        const toolStart = Date.now();
+        let resultText: string;
+        try {
+          resultText = toolDef
+            ? await toolDef.execute(toolUse.input)
+            : `Error: tool "${toolUse.name}" is not available to this agent.`;
+        } catch (err) {
+          resultText = `Error: ${err instanceof Error ? err.message : String(err)}`;
+        }
+        log(`-- [${this.id}] tool "${toolUse.name}"(${JSON.stringify(toolUse.input)}) -> ${resultText.slice(0, 120)} --`);
+        trace({
+          ts: new Date().toISOString(),
+          agentId: this.id,
+          event: "tool",
+          latencyMs: Date.now() - toolStart,
+          input: `${toolUse.name}(${JSON.stringify(toolUse.input)})`,
+          output: resultText,
+        });
+        toolResultBlocks.push({
+          type: "tool_result",
+          tool_use_id: toolUse.id,
+          // Prompt-injection defense (spec #10): wrapped as explicit
+          // untrusted data, never as an instruction, before re-entering the
+          // conversation.
+          content: wrapToolResult(toolUse.name, resultText),
+        });
+      }
+      messages.push({ role: "user", content: toolResultBlocks });
+    }
+
+    throw new Error(`exceeded maxToolTurns=${this.maxToolTurns} without producing a final answer`);
   }
 
   // Whether this agent is willing to run at all, given the current context.
@@ -100,7 +184,7 @@ export class Agent {
 
     const start = Date.now();
     const judgeInput = `Criteria:\n${this.validateCfg.criteria}\n\nOutput to evaluate:\n${output}`;
-    const result = await callModel(this.llm, JUDGE_SYSTEM_PROMPT, judgeInput, this.modelOverride);
+    const result = await callSingle(this.llm, JUDGE_SYSTEM_PROMPT, judgeInput, this.modelOverride);
     ctx.tokenUsage.input += result.inputTokens;
     ctx.tokenUsage.output += result.outputTokens;
     trace({
@@ -118,7 +202,8 @@ export class Agent {
   }
 
   // The full pipeline a "doer" agent goes through before its output is
-  // handed upstream: shouldExecute gate -> run -> validate -> retry-on-fail.
+  // handed upstream: shouldExecute gate -> run (ReAct if tools are
+  // configured, otherwise a single call) -> validate -> retry-on-fail.
   // Never throws -- every failure mode (decline, validation failure, or an
   // unexpected runtime error) comes back as a typed ExecResult so the caller
   // can react instead of crashing the whole orchestration.
@@ -135,7 +220,7 @@ export class Agent {
       let attempt = 0;
 
       while (true) {
-        output = await this.run(currentMessage, ctx);
+        output = this.tools.length > 0 ? await this.runReAct(currentMessage, ctx, log) : await this.run(currentMessage, ctx);
         attempt++;
         const { ok, reason } = await this.validateOutput(output, ctx);
 
@@ -164,10 +249,11 @@ export function buildAgentMap(
   agentConfigs: AgentConfig[],
   llm: LlmConfig,
   baseDir: string,
+  toolRegistry: Map<string, ToolDef>,
 ): Map<string, Agent> {
   const map = new Map<string, Agent>();
   for (const cfg of agentConfigs) {
-    map.set(cfg.id, new Agent(cfg, llm, baseDir));
+    map.set(cfg.id, new Agent(cfg, llm, baseDir, toolRegistry));
   }
   return map;
 }

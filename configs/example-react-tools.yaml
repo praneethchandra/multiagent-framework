@@ -1,0 +1,44 @@
+# ReAct / tool-calling pattern: agents alternate between reasoning and tool
+# calls (Thought -> Action -> Observation) until they have a final answer.
+# Demonstrates least privilege (spec #11): math_solver can only use the
+# calculator, file_summarizer can only use read_prompts -- neither tool is
+# even sent to the model for the agent that didn't declare it.
+name: react-tools-demo
+pattern: sequential
+
+llm:
+  model: claude-sonnet-4-6
+  apiKeyEnv: ANTHROPIC_API_KEY
+  maxTokens: 1024
+
+goal: "Demonstrate ReAct tool-calling: solve a multi-step calculation and summarize a sandboxed file"
+
+tools:
+  - id: calculator
+    type: calculator
+    description: "Evaluate an arithmetic expression and return the numeric result"
+  - id: read_prompts
+    type: file_read
+    description: "Read a file from the prompts/ directory (read-only, sandboxed -- cannot escape this directory)"
+    baseDir: ../prompts
+
+agents:
+  - id: math_solver
+    description: "Solves multi-step arithmetic problems using a calculator tool"
+    promptFile: ../prompts/math_solver.md
+    tools: [calculator]
+    maxToolTurns: 6
+  - id: file_summarizer
+    description: "Reads and summarizes a file from a sandboxed directory"
+    promptFile: ../prompts/file_summarizer.md
+    tools: [read_prompts]
+    maxToolTurns: 4
+
+workflow:
+  steps:
+    - agent: math_solver
+      input: "What is (847 * 23) - 1500, and then what is that result divided by 7? Use the calculator tool for each arithmetic step rather than computing it yourself."
+      output: math_result
+    - agent: file_summarizer
+      input: "Read the file at path 'researcher.md' and summarize what it instructs the agent to do."
+      output: file_summary
