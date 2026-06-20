@@ -12,7 +12,7 @@ export async function runApp(
 ): Promise<RunContext> {
   const agents = buildAgentMap(config.agents, config.llm, baseDir);
   const agentConfigs = new Map(config.agents.map((a) => [a.id, a]));
-  const ctx: RunContext = { vars: {}, goal: config.goal };
+  const ctx: RunContext = { vars: {}, goal: config.goal, tokenUsage: { input: 0, output: 0 } };
 
   log(`=== running "${config.name}" (pattern: ${config.pattern}) ===`);
 
@@ -31,6 +31,6 @@ export async function runApp(
       break;
   }
 
-  log(`=== done ===`);
+  log(`=== done (${ctx.tokenUsage.input + ctx.tokenUsage.output} total tokens: ${ctx.tokenUsage.input} in / ${ctx.tokenUsage.output} out) ===`);
   return ctx;
 }

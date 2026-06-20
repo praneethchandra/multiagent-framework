@@ -51,6 +51,19 @@ export const LoopConfigSchema = z.object({
   steps: z.array(z.string()).optional(),
   until: z.string(), // JS-like boolean expression evaluated against context, e.g. "vars.review.includes('APPROVED')"
   maxIterations: z.number().default(5),
+  // Cumulative input+output tokens spent inside this loop (across all its
+  // iterations) before it's treated as exhausted, same as maxIterations but
+  // measured in tokens instead of turns.
+  tokenBudget: z.number().optional(),
+  // What happens when the loop exhausts (maxIterations or tokenBudget)
+  // without `until` becoming true: "lastAttempt" keeps the most recent
+  // iteration's output and proceeds (the historical default); "fail" throws,
+  // treating an unconverged adversarial-verify loop as a hard run failure.
+  onExhaustion: z.enum(["lastAttempt", "fail"]).default("lastAttempt"),
+  // Optional variable name to record the loop's outcome in: "approved" if
+  // `until` was satisfied, or a structured *_EXCEEDED message otherwise --
+  // lets a later step branch on whether the loop actually converged.
+  statusVar: z.string().optional(),
 });
 
 export const WorkflowSchema = z.object({
@@ -71,6 +84,15 @@ export const SupervisorConfigSchema = z.object({
   input: z.string(),
   maxTurns: z.number().default(10),
   output: z.string().default("final_output"),
+  // Context-window discipline: only the most recent N worker exchanges are
+  // kept verbatim in the transcript shown to the supervisor; older ones are
+  // collapsed to a one-line summary so the transcript doesn't grow forever.
+  contextWindowTurns: z.number().default(6),
+  // Cumulative input+output tokens spent by this supervisor and everything
+  // it delegates to, before the run is treated as budget-exhausted -- a
+  // second, finer-grained safety net alongside maxTurns (spec: "every loop
+  // carries a hard turn budget AND a token budget").
+  tokenBudget: z.number().optional(),
 });
 
 export const HierarchicalConfigSchema = z.object({
@@ -78,6 +100,8 @@ export const HierarchicalConfigSchema = z.object({
   input: z.string(),
   maxTurns: z.number().default(15),
   output: z.string().default("final_output"),
+  contextWindowTurns: z.number().default(6),
+  tokenBudget: z.number().optional(),
 });
 
 export const PatternEnum = z.enum([
@@ -110,7 +134,16 @@ export type SupervisorConfig = z.infer<typeof SupervisorConfigSchema>;
 export type HierarchicalConfig = z.infer<typeof HierarchicalConfigSchema>;
 export type AppConfig = z.infer<typeof AppConfigSchema>;
 
+export interface TokenUsage {
+  input: number;
+  output: number;
+}
+
 export interface RunContext {
   vars: Record<string, string>;
   goal: string;
+  // Cumulative tokens spent so far across the whole run, updated by every
+  // model call. Loops/supervisors capture a baseline snapshot at their own
+  // start and compare against this to enforce a scoped tokenBudget.
+  tokenUsage: TokenUsage;
 }

@@ -16,12 +16,18 @@ function getClient(apiKeyEnv: string): Anthropic {
   return client;
 }
 
+export interface ModelResult {
+  text: string;
+  inputTokens: number;
+  outputTokens: number;
+}
+
 export async function callModel(
   llm: LlmConfig,
   systemPrompt: string,
   userMessage: string,
   modelOverride?: string,
-): Promise<string> {
+): Promise<ModelResult> {
   const client = getClient(llm.apiKeyEnv);
   const response = await client.messages.create({
     model: modelOverride ?? llm.model,
@@ -30,8 +36,13 @@ export async function callModel(
     system: systemPrompt,
     messages: [{ role: "user", content: userMessage }],
   });
-  return response.content
+  const text = response.content
     .filter((block) => block.type === "text")
     .map((block) => (block as { text: string }).text)
     .join("\n");
+  return {
+    text,
+    inputTokens: response.usage.input_tokens,
+    outputTokens: response.usage.output_tokens,
+  };
 }

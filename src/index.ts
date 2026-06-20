@@ -3,6 +3,7 @@ import { Command } from "commander";
 import dotenv from "dotenv";
 import { loadConfig } from "./configLoader.js";
 import { runApp } from "./orchestrator.js";
+import { initTrace, closeTrace } from "./trace.js";
 
 dotenv.config();
 
@@ -13,7 +14,9 @@ program
   .description("Run a config-defined multi-agent system")
   .argument("<configPath>", "path to the YAML config file")
   .option("-o, --output <var>", "print only this output variable's final value instead of the full vars dump")
-  .action(async (configPath: string, opts: { output?: string }) => {
+  .option("-t, --trace <file>", "append a JSONL trace of every model call (agent id, latency, tokens, I/O) to this file")
+  .action(async (configPath: string, opts: { output?: string; trace?: string }) => {
+    initTrace(opts.trace);
     try {
       const { config, baseDir } = loadConfig(configPath);
       const ctx = await runApp(config, baseDir);
@@ -29,6 +32,8 @@ program
     } catch (err) {
       console.error(`Error: ${(err as Error).message}`);
       process.exitCode = 1;
+    } finally {
+      await closeTrace();
     }
   });
 

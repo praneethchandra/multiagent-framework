@@ -43,3 +43,9 @@ supervisorConfig:
   input: "{{goal}}"
   maxTurns: 8
   output: final_output
+  # Token budget alongside the turn budget (spec #5): if the supervisor and
+  # its workers together burn through this many tokens without finishing,
+  # the run stops with a TOKEN_BUDGET_EXCEEDED signal instead of running
+  # away on cost. 40k is generous headroom for this task -- it's here to
+  # demonstrate the mechanism, not because this task needs it.
+  tokenBudget: 40000

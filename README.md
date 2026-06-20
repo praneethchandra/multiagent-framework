@@ -107,14 +107,24 @@ workflow:
     steps: [draft, review]              # which steps (by output name) to repeat
     until: "vars.review.includes('APPROVED')"   # JS boolean expression; `vars` and `goal` are in scope
     maxIterations: 3
+    tokenBudget: 50000        # optional second safety net, measured in tokens instead of turns
+    onExhaustion: lastAttempt  # "lastAttempt" (keep going, default) or "fail" (throw)
+    statusVar: loop_status     # optional; records "approved" or a *_EXCEEDED message
 ```
 
-Omit `steps` to loop the entire `workflow.steps` list.
+Omit `steps` to loop the entire `workflow.steps` list. A loop with a generator
+step and a critic step is the **Adversarial-Verify** pattern — generator and
+critic alternate until the critic accepts, bounded by `maxIterations` and
+(optionally) `tokenBudget` so the back-and-forth can't run away. See
+`configs/example-sequential.yaml`.
 
 **Supervisor / hierarchical patterns** — looping is implicit: the supervisor
-agent itself decides, turn by turn, whether to call another worker or finish
-(`maxTurns` / `supervisorConfig.maxTurns` / `hierarchical.maxTurns` is the
-safety cap).
+agent itself decides, turn by turn, whether to call another worker or finish.
+`maxTurns` (`supervisorConfig.maxTurns` / `hierarchical.maxTurns`) is the turn
+safety cap; `tokenBudget` on either config is a second cap measured in tokens
+spent by the supervisor and everything it delegates to. Either one being
+exceeded produces the same kind of structured signal as above (see Section
+11).
 
 ## 5. Prompts
 
@@ -216,14 +226,98 @@ validate:
 ```
 
 On failure, if `maxRetries > 0` the agent is re-prompted with the rejection
-reason appended and tries again; once retries are exhausted, `onFail: fail`
-throws (stopping the run) or `onFail: warn` logs a warning and the output is
-passed through anyway. This is opt-in and entirely per-agent — an agent with
-no `validate` block always passes through unchecked, and no caller (sequential
-step, supervisor, aggregator) needs to know or care which agents validate
+reason appended and tries again. Once retries are exhausted, `onFail: warn`
+logs a warning and passes the output through anyway; `onFail: fail` marks the
+result as a failure (see Section 9) — what happens next depends on the
+pattern: a `sequential` step hard-stops the whole run (later steps likely
+depend on this one's output), while `supervisor`/`hierarchical`/`parallel`
+patterns route around it instead of crashing. This is opt-in and entirely
+per-agent — an agent with no `validate` block always passes through
+unchecked, and no caller needs to know or care which agents validate
 themselves.
 
-## 9. Running it
+## 9. Typed handoffs — agents never fail silently
+
+Every call to `agent.execute()` (used for pipeline steps, supervisor/team
+worker calls, and parallel fan-out) returns one of three explicit statuses
+instead of throwing:
+
+| status | meaning |
+|---|---|
+| `ok` | ran successfully, output passed validation (or has none) |
+| `skipped` | `shouldExecute` was false — the agent declined |
+| `error` | validation failed with `onFail: fail`, or an unexpected runtime error occurred (e.g. a network failure) |
+
+`execute()` itself never throws — a worker hitting an error becomes a typed
+result the *caller* sees and can react to:
+
+- **`supervisor`/`hierarchical`**: an `error` or `skipped` worker result is
+  reported back into the conversation as `[workerId error]: <reason>` or
+  `[workerId declined]: <reason>`, so the supervisor's own LLM judgment can
+  route to a different worker, retry, or give up — the framework doesn't
+  decide that for it.
+- **`parallel`**: a failed/declined agent is excluded from aggregation (with
+  a logged warning); the run only fails outright if *every* fan-out agent
+  fails.
+- **`sequential`**: an `error` status is a hard stop — later steps' templates
+  likely depend on this step's output, so silently continuing with a bad or
+  empty value would corrupt downstream state. The thrown error includes the
+  failure reason.
+
+## 10. Context-window discipline
+
+`supervisor` and `hierarchical` patterns hold a running conversation between
+the supervisor and its workers across turns. Rather than appending every
+turn's full output forever (which grows the prompt without bound and
+eventually confuses the model with stale state), only the most recent
+`contextWindowTurns` exchanges are kept verbatim; older ones are collapsed to
+a one-line summary:
+
+```yaml
+supervisorConfig:
+  ...
+  contextWindowTurns: 6   # default; also available on `hierarchical:`
+```
+
+## 11. Budget exhaustion
+
+If a `supervisor`/`hierarchical` node hits `maxTurns` or its optional
+`tokenBudget` without finishing, the run doesn't crash. It returns a
+clearly-marked partial result instead, naming which budget ran out:
+
+```
+TURN_BUDGET_EXCEEDED: supervisor "lead" did not finish within maxTurns=8.
+
+Last exchange:
+...
+```
+
+```
+TOKEN_BUDGET_EXCEEDED: supervisor "lead" spent 41203 tokens (budget 40000) without finishing.
+
+Last exchange:
+...
+```
+
+This is written to the configured `output` variable (or bubbled up to a
+parent supervisor in `hierarchical`, which can react to it like any other
+worker response) — never silently treated as a successful finish. The
+`sequential` pattern's loop produces the analogous `MAX_ITERATIONS_EXCEEDED`
+/ `TOKEN_BUDGET_EXCEEDED` signals into `statusVar` if one is configured (see
+Section 4).
+
+## 12. Observability — `--trace`
+
+Pass `--trace <file>` to append a JSON-lines log of every model call (agent
+id, event type, latency, input/output token counts, and the full input/output
+text) to a file, so a run can be inspected or replayed after the fact instead
+of only living in console output:
+
+```bash
+npm run run -- configs/example-supervisor.yaml --trace run.jsonl
+```
+
+## 13. Running it
 
 ```
 npm run run -- <path-to-config.yaml> [--output <varName>]
@@ -234,7 +328,7 @@ CLI at any config file that follows this syntax and it executes that
 multi-agent system end to end, printing every variable produced (or just one,
 with `--output`).
 
-## 10. Pattern-specific config reference
+## 14. Pattern-specific config reference
 
 ### `parallel`
 

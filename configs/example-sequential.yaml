@@ -45,8 +45,13 @@ workflow:
       output: review
 
   # Repeat the writer/critic exchange until the critic approves, or a
-  # maximum of 3 iterations is reached.
+  # maximum of 3 iterations is reached -- this is the Adversarial-Verify
+  # pattern (generator vs. critic, bounded convergence). `statusVar` records
+  # whether it actually converged ("approved") or ran out of budget, so a
+  # later step (or the CLI output) can tell the difference.
   loop:
     steps: [draft, review]
     until: "vars.review.includes('APPROVED')"
     maxIterations: 3
+    onExhaustion: lastAttempt
+    statusVar: loop_status

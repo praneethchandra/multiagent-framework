@@ -2,15 +2,25 @@ import { AgentConfig, LlmConfig, RunContext, ValidateConfig } from "./types.js";
 import { resolvePrompt } from "./configLoader.js";
 import { callModel } from "./llmClient.js";
 import { evalExpr } from "./template.js";
+import { trace } from "./trace.js";
 
 const JUDGE_SYSTEM_PROMPT = `You are a strict QA checker. You are given a set of criteria and a piece of
 output to evaluate against them. Respond with exactly "APPROVED" if the
 output fully satisfies the criteria. Otherwise respond with "REJECTED: "
 followed by a one-sentence reason. Do not include anything else.`;
 
+// Typed handoff status (spec #1 / anti-pattern 5.6 "silent failures between
+// agents"): a caller (supervisor, pipeline step, aggregator) always gets back
+// one of these three states instead of an agent's run silently succeeding,
+// silently producing garbage, or throwing and killing the whole orchestration.
+// "error" covers both validation failures (onFail: fail) and unexpected
+// runtime failures (network errors, etc.) -- execute() never throws.
+export type ExecStatus = "ok" | "skipped" | "error";
+
 export interface ExecResult {
-  skipped: boolean;
+  status: ExecStatus;
   output: string;
+  reason?: string; // present when status is "skipped" or "error"
   attempts: number;
 }
 
@@ -35,16 +45,35 @@ export class Agent {
     this.validateCfg = config.validate;
   }
 
-  // Raw, unvalidated call -- used for protocol-driven control-flow turns
-  // (supervisor/team-lead decisions) where the reply is a routing decision,
-  // not a deliverable to validate.
-  async run(message: string): Promise<string> {
-    return callModel(this.llm, this.systemPrompt, message, this.modelOverride);
+  // Raw, unvalidated, throwing call -- used for protocol-driven control-flow
+  // turns (supervisor/team-lead decisions) where there's no caller below to
+  // hand a structured error to; a network failure here is a genuine run
+  // failure and should propagate to the CLI's top-level error handler.
+  // `ctx` is optional only so existing call sites without a token budget to
+  // track still compile -- every pattern in this codebase passes it.
+  async run(message: string, ctx?: RunContext): Promise<string> {
+    const start = Date.now();
+    const result = await callModel(this.llm, this.systemPrompt, message, this.modelOverride);
+    if (ctx) {
+      ctx.tokenUsage.input += result.inputTokens;
+      ctx.tokenUsage.output += result.outputTokens;
+    }
+    trace({
+      ts: new Date().toISOString(),
+      agentId: this.id,
+      event: "call",
+      latencyMs: Date.now() - start,
+      inputTokens: result.inputTokens,
+      outputTokens: result.outputTokens,
+      input: message,
+      output: result.text,
+    });
+    return result.text;
   }
 
   // Whether this agent is willing to run at all, given the current context.
-  // The agent owns this decision entirely -- callers (supervisors, pipeline
-  // steps) just ask via execute() and get back `skipped: true` if declined.
+  // The agent owns this decision entirely -- callers just ask via execute()
+  // and get back `status: "skipped"` if declined.
   shouldRun(ctx: RunContext): boolean {
     if (!this.shouldExecuteExpr) return true;
     return Boolean(evalExpr(this.shouldExecuteExpr, { vars: ctx.vars, goal: ctx.goal }));
@@ -69,46 +98,64 @@ export class Agent {
       return { ok, reason: ok ? "" : `did not satisfy rule: ${this.validateCfg.rule}` };
     }
 
-    const verdict = await callModel(
-      this.llm,
-      JUDGE_SYSTEM_PROMPT,
-      `Criteria:\n${this.validateCfg.criteria}\n\nOutput to evaluate:\n${output}`,
-      this.modelOverride,
-    );
-    const ok = verdict.trim().toUpperCase().startsWith("APPROVED");
-    return { ok, reason: ok ? "" : verdict.trim() };
+    const start = Date.now();
+    const judgeInput = `Criteria:\n${this.validateCfg.criteria}\n\nOutput to evaluate:\n${output}`;
+    const result = await callModel(this.llm, JUDGE_SYSTEM_PROMPT, judgeInput, this.modelOverride);
+    ctx.tokenUsage.input += result.inputTokens;
+    ctx.tokenUsage.output += result.outputTokens;
+    trace({
+      ts: new Date().toISOString(),
+      agentId: this.id,
+      event: "validate",
+      latencyMs: Date.now() - start,
+      inputTokens: result.inputTokens,
+      outputTokens: result.outputTokens,
+      input: judgeInput,
+      output: result.text,
+    });
+    const ok = result.text.trim().toUpperCase().startsWith("APPROVED");
+    return { ok, reason: ok ? "" : result.text.trim() };
   }
 
   // The full pipeline a "doer" agent goes through before its output is
   // handed upstream: shouldExecute gate -> run -> validate -> retry-on-fail.
+  // Never throws -- every failure mode (decline, validation failure, or an
+  // unexpected runtime error) comes back as a typed ExecResult so the caller
+  // can react instead of crashing the whole orchestration.
   async execute(ctx: RunContext, message: string, log: (s: string) => void = console.log): Promise<ExecResult> {
     if (!this.shouldRun(ctx)) {
       log(`-- [${this.id}] shouldExecute condition not met; skipping --`);
-      return { skipped: true, output: "", attempts: 0 };
+      return { status: "skipped", output: "", reason: "shouldExecute condition not met", attempts: 0 };
     }
 
-    const maxRetries = this.validateCfg?.maxRetries ?? 0;
-    let currentMessage = message;
-    let output = "";
-    let attempt = 0;
+    try {
+      const maxRetries = this.validateCfg?.maxRetries ?? 0;
+      let currentMessage = message;
+      let output = "";
+      let attempt = 0;
 
-    while (true) {
-      output = await this.run(currentMessage);
-      attempt++;
-      const { ok, reason } = await this.validateOutput(output, ctx);
+      while (true) {
+        output = await this.run(currentMessage, ctx);
+        attempt++;
+        const { ok, reason } = await this.validateOutput(output, ctx);
 
-      if (ok || attempt > maxRetries) {
-        if (!ok) {
-          if (this.onFailAction() === "fail") {
-            throw new Error(`[${this.id}] output failed validation after ${attempt} attempt(s): ${reason}`);
+        if (ok || attempt > maxRetries) {
+          if (!ok) {
+            if (this.onFailAction() === "fail") {
+              return { status: "error", output, reason: `validation failed: ${reason}`, attempts: attempt };
+            }
+            log(`-- [${this.id}] WARNING: output failed validation but proceeding (${reason}) --`);
           }
-          log(`-- [${this.id}] WARNING: output failed validation but proceeding (${reason}) --`);
+          return { status: "ok", output, attempts: attempt };
         }
-        return { skipped: false, output, attempts: attempt };
-      }
 
-      log(`-- [${this.id}] validation failed (attempt ${attempt}/${maxRetries + 1}): ${reason}; retrying --`);
-      currentMessage = `${message}\n\nYour previous attempt was rejected: ${reason}\nPlease produce a corrected response.`;
+        log(`-- [${this.id}] validation failed (attempt ${attempt}/${maxRetries + 1}): ${reason}; retrying --`);
+        currentMessage = `${message}\n\nYour previous attempt was rejected: ${reason}\nPlease produce a corrected response.`;
+      }
+    } catch (err) {
+      const reason = err instanceof Error ? err.message : String(err);
+      log(`-- [${this.id}] ERROR: ${reason} --`);
+      return { status: "error", output: "", reason, attempts: 0 };
     }
   }
 }
