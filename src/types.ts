@@ -57,6 +57,16 @@ export const AgentConfigSchema = z.object({
   // loop, separate from any pattern-level maxTurns -- bounds how many
   // tool-call round-trips a single agent invocation can make.
   maxToolTurns: z.number().default(6),
+  // RAG (spec: separating long-term memory from the finite context window).
+  // If set, the agent's input is augmented with the topK most relevant
+  // documents from the named top-level retrievalStores entry before the
+  // model ever sees it.
+  retrieval: z
+    .object({
+      store: z.string(),
+      topK: z.number().default(3),
+    })
+    .optional(),
 });
 
 export const StepSchema = z.object({
@@ -123,11 +133,30 @@ export const HierarchicalConfigSchema = z.object({
   tokenBudget: z.number().optional(),
 });
 
+// Dynamic Plan-then-Execute: a planner agent emits a step list (the exact
+// same {agent, input, output} shape as workflow.steps) at runtime instead
+// of it being hand-authored in YAML; the plan is schema-validated at ingress
+// (spec #1, typed handoffs) before any of its steps are executed.
+export const PlanExecuteConfigSchema = z.object({
+  planner: z.string(), // agent id
+  executorAgents: z.array(z.string()), // allow-list: ids the plan's steps may reference
+  input: z.string(),
+  output: z.string().default("final_output"),
+  maxSteps: z.number().default(10),
+});
+
+export const RetrievalStoreConfigSchema = z.object({
+  id: z.string(),
+  type: z.literal("local_files"), // the only backing store this framework ships -- a directory of text files
+  dir: z.string(), // relative to the config file's directory
+});
+
 export const PatternEnum = z.enum([
   "sequential",
   "supervisor",
   "parallel",
   "hierarchical",
+  "plan_execute",
 ]);
 
 export const AppConfigSchema = z.object({
@@ -137,15 +166,18 @@ export const AppConfigSchema = z.object({
   llm: LlmConfigSchema.default({}),
   agents: z.array(AgentConfigSchema),
   tools: z.array(ToolConfigSchema).default([]), // top-level tool registry; agents opt in via agents[].tools
+  retrievalStores: z.array(RetrievalStoreConfigSchema).default([]), // top-level RAG stores; agents opt in via agents[].retrieval
   workflow: WorkflowSchema.optional(), // used by "sequential"
   parallel: ParallelConfigSchema.optional(), // used by "parallel"
   supervisorConfig: SupervisorConfigSchema.optional(), // used by "supervisor"
   hierarchical: HierarchicalConfigSchema.optional(), // used by "hierarchical"
+  planExecute: PlanExecuteConfigSchema.optional(), // used by "plan_execute"
 });
 
 export type LlmConfig = z.infer<typeof LlmConfigSchema>;
 export type ValidateConfig = z.infer<typeof ValidateConfigSchema>;
 export type ToolConfig = z.infer<typeof ToolConfigSchema>;
+export type RetrievalStoreConfig = z.infer<typeof RetrievalStoreConfigSchema>;
 export type AgentConfig = z.infer<typeof AgentConfigSchema>;
 export type Step = z.infer<typeof StepSchema>;
 export type LoopConfig = z.infer<typeof LoopConfigSchema>;
@@ -153,6 +185,7 @@ export type Workflow = z.infer<typeof WorkflowSchema>;
 export type ParallelConfig = z.infer<typeof ParallelConfigSchema>;
 export type SupervisorConfig = z.infer<typeof SupervisorConfigSchema>;
 export type HierarchicalConfig = z.infer<typeof HierarchicalConfigSchema>;
+export type PlanExecuteConfig = z.infer<typeof PlanExecuteConfigSchema>;
 export type AppConfig = z.infer<typeof AppConfigSchema>;
 
 export interface TokenUsage {

@@ -40,10 +40,11 @@ Set `pattern` at the top of your config to one of:
 | `supervisor`   | one supervisor agent dynamically delegates to worker agents       | the steps aren't fixed in advance; an agent should decide who does what, and when the task is done |
 | `parallel`     | several agents run concurrently on the same input, then an aggregator merges results | independent perspectives/sub-tasks that don't depend on each other (fan-out / fan-in) |
 | `hierarchical` | nested supervisors — a root supervisor delegates to team-lead agents, which delegate to their own workers | org-chart-shaped problems, large worker counts you want to group |
+| `plan_execute` | a planner agent emits a step list at runtime, then it's executed by the same step-runner `sequential` uses | the right sequence of steps isn't known ahead of time, but you still want a typed, schema-validated plan rather than a free-form supervisor negotiation |
 
 Each pattern requires its own matching top-level config block:
 `workflow` (sequential), `supervisorConfig` (supervisor), `parallel` (parallel),
-`hierarchical` (hierarchical).
+`hierarchical` (hierarchical), `planExecute` (plan_execute).
 
 ## 2. Config file syntax
 
@@ -51,7 +52,7 @@ A config is one YAML file. Top-level fields:
 
 ```yaml
 name: string                # just a label, shown in logs
-pattern: sequential | supervisor | parallel | hierarchical
+pattern: sequential | supervisor | parallel | hierarchical | plan_execute
 goal: string                # the overall objective; available as {{goal}} in templates
 
 llm:                         # optional, these are the defaults
@@ -75,11 +76,17 @@ agents:                      # every agent used anywhere in the config
     validate: { ... }                     # see Section 8
     tools: [toolId, ...]                  # see Section 13; defaults to none
     maxToolTurns: 6                       # see Section 13
+    retrieval: { store: storeId, topK: 3 } # see Section 15
 
 tools:                       # optional top-level tool registry, see Section 13
   - id: toolId
     type: calculator | http_get | file_read
     description: "..."
+
+retrievalStores:             # optional top-level RAG store registry, see Section 15
+  - id: storeId
+    type: local_files
+    dir: ./knowledge
 ```
 
 Each agent needs exactly one of `prompt` (inline) or `promptFile` (external
@@ -380,10 +387,117 @@ instructions," the agent sees it labeled as data, not as a command. See
 `configs/example-react-tools.yaml` for a full working demo (one agent that
 can only use a calculator, one that can only read a sandboxed directory).
 
-## 14. Running it
+## 14. Dynamic Plan-then-Execute
+
+The `sequential` pattern's `workflow.steps` is a plan you write by hand. The
+`plan_execute` pattern has a planner agent generate that same kind of plan
+*at runtime* instead:
+
+```yaml
+pattern: plan_execute
+
+planExecute:
+  planner: planner            # agent id; see prompts/planner.md for the required output contract
+  executorAgents: [researcher, writer]   # allow-list: only these ids may appear in the generated plan
+  input: "{{goal}}"
+  output: final_output
+  maxSteps: 6
+```
+
+The planner must respond with `{"steps": [{"agent": "...", "input": "...",
+"output": "..."}, ...]}` — the exact same shape as a hand-written
+`workflow.steps` list. This is a typed handoff (spec #1): the plan is
+JSON-parsed and schema-validated, and every `agent` in it is checked against
+`executorAgents` before a single step runs. A malformed plan, an empty plan,
+a plan exceeding `maxSteps`, or a plan referencing an agent outside the
+allow-list is rejected with a clear error rather than executed speculatively.
+Accepted plans run through the identical step-runner `sequential` uses. See
+`configs/example-plan-execute.yaml`.
+
+## 15. RAG (retrieval-augmented agents)
+
+Give an agent a `retrieval` block and its input is grounded in the most
+relevant documents from a local knowledge base before the model ever sees
+it, instead of relying on whatever fits in the prompt by hand:
+
+```yaml
+retrievalStores:
+  - id: policies
+    type: local_files     # the only backing store this framework ships: a directory of text files
+    dir: ./knowledge
+
+agents:
+  - id: support_agent
+    promptFile: prompts/support_agent.md
+    retrieval:
+      store: policies
+      topK: 2               # how many documents to retrieve per call
+```
+
+Retrieval uses simple term-overlap scoring (no embeddings call, no extra
+dependency) — the point is the retrieve-then-ground pattern, not
+state-of-the-art relevance ranking. Swapping in a real vector-store backend
+later only means adding a new `retrievalStores[].type` and a matching
+builder in `src/retrieval.ts`; nothing above that layer changes. Retrieved
+content gets the same untrusted-data envelope as tool output (spec #10) —
+grounding data is still external, unvalidated input. See
+`configs/example-rag.yaml`.
+
+## 16. Checkpoint-Resume
+
+```bash
+npm run run -- configs/example-sequential.yaml --checkpoint run.json
+npm run run -- configs/example-sequential.yaml --resume run.json
+```
+
+`--checkpoint <file>` writes the run's progress to disk after every
+step/turn (atomically — via a temp file + rename, so a kill mid-write can't
+corrupt it); `--resume <file>` restores `vars` and token usage from a prior
+checkpoint and continues instead of starting over. You can pass the same
+path to both flags to resume-and-keep-checkpointing in place.
+
+Full resume support exists for two patterns:
+- **`sequential`**: resumes by skipping however many pre-loop steps already
+  completed. The loop section (if any) always restarts fresh on resume —
+  resuming mid-negotiation isn't generally meaningful, so this is a
+  deliberate simplification, not a silent gap.
+- **`supervisor`**: resumes by turn count *and* the exact conversation
+  transcript, so the supervisor picks up with its full prior context intact.
+
+`parallel` and `hierarchical` checkpoint their final `vars`/token usage for
+inspection, but `--resume` does not support resuming *mid-run* for either —
+`parallel`'s fan-out is one-shot, and `hierarchical`'s recursive nested
+supervisor state isn't serialized. This is a known, documented limitation
+rather than a half-correct implementation.
+
+## 17. Human escalation
+
+Per the ambiguity-escalation principle (spec #12: "specify in advance which
+classes of ambiguity the agent resolves autonomously and which it surfaces
+to a human"), any `supervisor` or `hierarchical` team-lead agent can pause
+and ask a real human instead of guessing on a genuinely consequential or
+irreversible decision:
 
 ```
-npm run run -- <path-to-config.yaml> [--output <varName>]
+ACTION: ask_human
+MESSAGE:
+<<<
+<the specific question>
+>>>
+```
+
+The framework prints the question to the console and blocks on stdin for an
+answer (`src/humanInput.ts`), then feeds the human's response back into the
+conversation as `[human responded]: ...` and continues — consuming a turn
+against the existing `maxTurns` budget. This is opt-in at the *prompt* level:
+`prompts/supervisor.md` and `prompts/team_lead.md` both instruct the agent to
+use it sparingly (routine decisions should still be resolved autonomously;
+this is for the cases where guessing wrong would be genuinely costly).
+
+## 18. Running it
+
+```
+npm run run -- <path-to-config.yaml> [--output <varName>] [--trace <file>] [--checkpoint <file>] [--resume <file>]
 ```
 
 This is the whole "application" — there's nothing else to build. Point the
@@ -391,7 +505,7 @@ CLI at any config file that follows this syntax and it executes that
 multi-agent system end to end, printing every variable produced (or just one,
 with `--output`).
 
-## 15. Pattern-specific config reference
+## 19. Pattern-specific config reference
 
 ### `parallel`
 
@@ -426,6 +540,21 @@ hierarchical:
 
 Nesting comes from each agent's `team` field — any team member can itself be
 `isSupervisor: true` with its own `team`, to arbitrary depth.
+
+### `plan_execute`
+
+```yaml
+planExecute:
+  planner: planner
+  executorAgents: [researcher, writer]
+  input: "{{goal}}"
+  output: final_output
+  maxSteps: 6
+```
+
+`planner` must be an agent whose prompt instructs it to emit `{"steps":
+[...]}}` (see `prompts/planner.md`); `executorAgents` is the allow-list the
+generated plan's `agent` fields are checked against.
 
 ## Adding your own multi-agent system
 

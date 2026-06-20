@@ -5,6 +5,7 @@ import { callModel, callSingle } from "./llmClient.js";
 import { evalExpr } from "./template.js";
 import { trace } from "./trace.js";
 import { ToolDef, wrapToolResult } from "./tools.js";
+import { RetrievalStore, retrieve, wrapRetrievedContext } from "./retrieval.js";
 
 const JUDGE_SYSTEM_PROMPT = `You are a strict QA checker. You are given a set of criteria and a piece of
 output to evaluate against them. Respond with exactly "APPROVED" if the
@@ -37,8 +38,16 @@ export class Agent {
   private readonly validateCfg?: ValidateConfig;
   private readonly tools: ToolDef[];
   private readonly maxToolTurns: number;
+  private readonly retrievalStore?: RetrievalStore;
+  private readonly retrievalTopK: number;
 
-  constructor(config: AgentConfig, llm: LlmConfig, baseDir: string, toolRegistry: Map<string, ToolDef>) {
+  constructor(
+    config: AgentConfig,
+    llm: LlmConfig,
+    baseDir: string,
+    toolRegistry: Map<string, ToolDef>,
+    retrievalRegistry: Map<string, RetrievalStore>,
+  ) {
     this.id = config.id;
     this.role = config.role ?? config.id;
     this.description = config.description ?? this.role;
@@ -52,6 +61,8 @@ export class Agent {
     // into its tool set -- there is no path for it to be called.
     this.tools = config.tools.map((id) => toolRegistry.get(id)!);
     this.maxToolTurns = config.maxToolTurns;
+    this.retrievalStore = config.retrieval ? retrievalRegistry.get(config.retrieval.store) : undefined;
+    this.retrievalTopK = config.retrieval?.topK ?? 3;
   }
 
   // Raw, unvalidated, throwing call -- used for protocol-driven control-flow
@@ -215,7 +226,13 @@ export class Agent {
 
     try {
       const maxRetries = this.validateCfg?.maxRetries ?? 0;
-      let currentMessage = message;
+      // RAG: ground this call in retrieved context before the model ever
+      // sees the task, rather than relying on whatever fits in the prompt
+      // by hand. Wrapped as untrusted data, same as tool output.
+      let currentMessage = this.retrievalStore
+        ? `${wrapRetrievedContext(retrieve(this.retrievalStore, message, this.retrievalTopK))}\n\nTask:\n${message}`
+        : message;
+      const baseMessage = currentMessage;
       let output = "";
       let attempt = 0;
 
@@ -235,7 +252,7 @@ export class Agent {
         }
 
         log(`-- [${this.id}] validation failed (attempt ${attempt}/${maxRetries + 1}): ${reason}; retrying --`);
-        currentMessage = `${message}\n\nYour previous attempt was rejected: ${reason}\nPlease produce a corrected response.`;
+        currentMessage = `${baseMessage}\n\nYour previous attempt was rejected: ${reason}\nPlease produce a corrected response.`;
       }
     } catch (err) {
       const reason = err instanceof Error ? err.message : String(err);
@@ -250,10 +267,11 @@ export function buildAgentMap(
   llm: LlmConfig,
   baseDir: string,
   toolRegistry: Map<string, ToolDef>,
+  retrievalRegistry: Map<string, RetrievalStore>,
 ): Map<string, Agent> {
   const map = new Map<string, Agent>();
   for (const cfg of agentConfigs) {
-    map.set(cfg.id, new Agent(cfg, llm, baseDir, toolRegistry));
+    map.set(cfg.id, new Agent(cfg, llm, baseDir, toolRegistry, retrievalRegistry));
   }
   return map;
 }

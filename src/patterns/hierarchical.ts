@@ -4,6 +4,8 @@ import { renderTemplate } from "../template.js";
 import { parseDecision } from "../protocol.js";
 import { Transcript } from "../transcript.js";
 import { tokenBaseline, tokensSince } from "../budget.js";
+import { CheckpointWriter } from "../checkpoint.js";
+import { askHuman } from "../humanInput.js";
 
 function buildRoster(memberIds: string[], agents: Map<string, Agent>): string {
   return memberIds.map((id) => `- ${id}: ${agents.get(id)!.description}`).join("\n");
@@ -73,6 +75,15 @@ async function runNode(
       return decision.payload;
     }
 
+    // Ambiguity escalation policy (spec #12): same mechanism as the
+    // supervisor pattern -- any team lead can pause and ask a human rather
+    // than guess on a genuinely ambiguous or consequential step.
+    if (decision.action === "ask_human") {
+      const answer = await askHuman(decision.payload);
+      transcript.add("human", answer);
+      continue;
+    }
+
     if (decision.action === "delegate") {
       if (!decision.target || !team.includes(decision.target)) {
         throw new Error(`Supervisor "${agentId}" delegated to a member not in its team: ${decision.target}`);
@@ -109,6 +120,7 @@ export async function runHierarchical(
   agentConfigs: Map<string, AgentConfig>,
   ctx: RunContext,
   log: (s: string) => void = console.log,
+  checkpoint?: CheckpointWriter,
 ): Promise<RunContext> {
   const input = renderTemplate(config.input, ctx);
   const budget: BudgetScope = { startTokens: tokenBaseline(ctx), tokenBudget: config.tokenBudget };
@@ -124,5 +136,9 @@ export async function runHierarchical(
     log,
   );
   ctx.vars[config.output] = result;
+  // Note: only a post-hoc snapshot (final vars + token usage), not a
+  // mid-run resume point -- the recursive nested supervisor state isn't
+  // serialized. --resume does not support this pattern; see README Section 16.
+  checkpoint?.({});
   return ctx;
 }

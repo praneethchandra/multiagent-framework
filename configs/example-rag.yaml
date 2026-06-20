@@ -1,0 +1,31 @@
+# RAG pattern: the support agent's question is grounded in the most
+# relevant documents from a local knowledge base before the model ever
+# sees it, rather than relying on what's baked into the prompt by hand.
+name: rag-support-demo
+pattern: sequential
+
+llm:
+  model: claude-sonnet-4-6
+  apiKeyEnv: ANTHROPIC_API_KEY
+  maxTokens: 512
+
+goal: "How long do I have to return an electronics item, and is shipping free?"
+
+retrievalStores:
+  - id: policies
+    type: local_files
+    dir: ../knowledge
+
+agents:
+  - id: support_agent
+    description: "Answers customer questions grounded in retrieved policy documents"
+    promptFile: ../prompts/support_agent.md
+    retrieval:
+      store: policies
+      topK: 2
+
+workflow:
+  steps:
+    - agent: support_agent
+      input: "{{goal}}"
+      output: answer

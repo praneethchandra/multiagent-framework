@@ -43,4 +43,16 @@ export class Transcript {
     if (!last) return "(no exchanges yet)";
     return last.content.length > maxChars ? last.content.slice(0, maxChars) + "..." : last.content;
   }
+
+  // For Checkpoint-Resume: a supervisor's conversation history is part of
+  // what it means to "resume from the last good checkpoint" -- without it,
+  // resuming would silently start the supervisor from a blank conversation
+  // while pretending prior turns happened.
+  toJSON(): TranscriptEntry[] {
+    return this.entries.slice();
+  }
+
+  restore(entries: TranscriptEntry[]): void {
+    this.entries = entries.slice();
+  }
 }

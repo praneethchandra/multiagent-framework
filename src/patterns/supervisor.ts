@@ -4,6 +4,8 @@ import { renderTemplate } from "../template.js";
 import { parseDecision } from "../protocol.js";
 import { Transcript } from "../transcript.js";
 import { tokenBaseline, tokensSince } from "../budget.js";
+import { CheckpointWriter } from "../checkpoint.js";
+import { askHuman } from "../humanInput.js";
 
 // Builds the worker roster purely from config (id + description) -- the
 // supervisor's prompt and this code never hardcode which agents exist or
@@ -14,11 +16,18 @@ function buildRoster(workerIds: string[], agents: Map<string, Agent>): string {
   return workerIds.map((id) => `- ${id}: ${agents.get(id)!.description}`).join("\n");
 }
 
+export interface SupervisorResumeState {
+  turn: number;
+  transcript: { speaker: string; content: string }[];
+}
+
 export async function runSupervisor(
   config: SupervisorConfig,
   agents: Map<string, Agent>,
   ctx: RunContext,
   log: (s: string) => void = console.log,
+  checkpoint?: CheckpointWriter,
+  resume?: SupervisorResumeState,
 ): Promise<RunContext> {
   const supervisor = agents.get(config.supervisor);
   if (!supervisor) throw new Error(`Unknown supervisor agent "${config.supervisor}"`);
@@ -29,8 +38,14 @@ export async function runSupervisor(
   const initialInput = renderTemplate(config.input, ctx);
   const header = `Task: ${initialInput}\nAvailable workers:\n${buildRoster(config.workers, agents)}`;
   const transcript = new Transcript(header, config.contextWindowTurns);
+  if (resume?.transcript) {
+    transcript.restore(resume.transcript);
+    log(`-- resumed supervisor "${config.supervisor}" from checkpoint at turn ${resume.turn} --`);
+  }
   const startTokens = tokenBaseline(ctx);
-  let turn = 0;
+  let turn = resume?.turn ?? 0;
+
+  const saveCheckpoint = () => checkpoint?.({ supervisor: { turn, transcript: transcript.toJSON() } });
 
   while (turn < config.maxTurns) {
     if (config.tokenBudget && tokensSince(ctx, startTokens) >= config.tokenBudget) {
@@ -49,11 +64,25 @@ export async function runSupervisor(
       const { accept, note } = await validateFinish(supervisor, ctx, decision.payload, log);
       if (!accept) {
         transcript.add("validation", note);
+        saveCheckpoint();
         continue;
       }
       ctx.vars[config.output] = decision.payload;
       log(`supervisor finished after ${turn} turn(s)`);
+      saveCheckpoint();
       return ctx;
+    }
+
+    // Ambiguity escalation policy (spec #12): a supervisor can pause and
+    // hand a genuinely ambiguous or consequential decision to a human
+    // instead of guessing -- the framework provides the mechanism, but it's
+    // the supervisor's own prompt that decides when ambiguity warrants it
+    // (see prompts/supervisor.md).
+    if (decision.action === "ask_human") {
+      const answer = await askHuman(decision.payload);
+      transcript.add("human", answer);
+      saveCheckpoint();
+      continue;
     }
 
     if (decision.action === "call") {
@@ -73,6 +102,7 @@ export async function runSupervisor(
       } else {
         transcript.add(worker.id, `[error]: ${result.reason}. Its output (if any) should not be trusted.`);
       }
+      saveCheckpoint();
       continue;
     }
 

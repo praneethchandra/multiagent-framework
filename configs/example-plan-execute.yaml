@@ -1,0 +1,31 @@
+# Dynamic Plan-then-Execute pattern: a planner agent looks at the task and
+# the available executor agents, and emits a step-by-step plan at RUNTIME
+# (validated against the same Step schema workflow.steps uses) -- instead of
+# you hand-writing the steps in YAML like the sequential pattern does.
+name: plan-execute-demo
+pattern: plan_execute
+
+llm:
+  model: claude-sonnet-4-6
+  apiKeyEnv: ANTHROPIC_API_KEY
+  maxTokens: 2048
+
+goal: "Research the basics of composting, then write a 3-paragraph beginner's guide"
+
+agents:
+  - id: planner
+    description: "Plans which agents to call, in what order, to complete a task"
+    promptFile: ../prompts/planner.md
+  - id: researcher
+    description: "Gathers bullet-point research findings on a topic"
+    promptFile: ../prompts/researcher.md
+  - id: writer
+    description: "Turns research notes into a polished short report"
+    promptFile: ../prompts/writer.md
+
+planExecute:
+  planner: planner
+  executorAgents: [researcher, writer]
+  input: "{{goal}}"
+  output: final_output
+  maxSteps: 6

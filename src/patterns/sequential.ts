@@ -2,8 +2,12 @@ import { Agent } from "../agent.js";
 import { Workflow, RunContext, Step } from "../types.js";
 import { renderTemplate, evalCondition } from "../template.js";
 import { tokenBaseline, tokensSince } from "../budget.js";
+import { CheckpointWriter } from "../checkpoint.js";
 
-async function runStep(step: Step, agents: Map<string, Agent>, ctx: RunContext, log: (s: string) => void) {
+// Exported so plan_execute (dynamic Plan-then-Execute) can run a
+// runtime-generated plan through the exact same step executor a hand-authored
+// workflow.steps list uses -- no separate "executing a plan" code path.
+export async function runStep(step: Step, agents: Map<string, Agent>, ctx: RunContext, log: (s: string) => void) {
   const agent = agents.get(step.agent);
   if (!agent) throw new Error(`Unknown agent "${step.agent}" referenced in workflow step`);
   const input = renderTemplate(step.input, ctx);
@@ -27,22 +31,41 @@ async function runStep(step: Step, agents: Map<string, Agent>, ctx: RunContext, 
   );
 }
 
+export interface SequentialResumeState {
+  preStepsCompleted: number;
+}
+
 export async function runSequential(
   workflow: Workflow,
   agents: Map<string, Agent>,
   ctx: RunContext,
   log: (s: string) => void = console.log,
+  checkpoint?: CheckpointWriter,
+  resume?: SequentialResumeState,
 ): Promise<RunContext> {
   const allSteps = workflow.steps;
   const loop = workflow.loop;
 
-  // Steps that fall before/after the looped section run exactly once.
-  const loopedOutputs = new Set(loop?.steps ?? allSteps.map((s) => s.output));
+  // Steps that fall before/after the looped section run exactly once. With
+  // no loop block at all, nothing is "looped" -- every step is a pre-step.
+  const loopedOutputs = new Set(loop ? loop.steps ?? allSteps.map((s) => s.output) : []);
+  const preSteps = allSteps.filter((s) => !loopedOutputs.has(s.output));
   const loopedSteps = loop ? allSteps.filter((s) => loopedOutputs.has(s.output)) : [];
 
-  for (const step of allSteps) {
-    if (loop && loopedOutputs.has(step.output)) continue; // handled below
-    await runStep(step, agents, ctx, log);
+  // Checkpoint-Resume (spec #3/#4): the pre-loop steps run in a fixed,
+  // deterministic order, so resuming means skipping however many of them
+  // already completed last time and continuing from there with the
+  // restored `vars`. The loop section always restarts fresh on resume --
+  // resuming mid-negotiation isn't generally meaningful, so this is a
+  // documented simplification rather than a half-correct implementation.
+  const alreadyDone = resume?.preStepsCompleted ?? 0;
+  for (let i = 0; i < preSteps.length; i++) {
+    if (i < alreadyDone) {
+      log(`-- skipping step "${preSteps[i].output}" (already completed, resumed from checkpoint) --`);
+      continue;
+    }
+    await runStep(preSteps[i], agents, ctx, log);
+    checkpoint?.({ sequential: { preStepsCompleted: i + 1 } });
   }
 
   if (loop) {
@@ -92,5 +115,6 @@ export async function runSequential(
     }
   }
 
+  checkpoint?.({ sequential: { preStepsCompleted: preSteps.length } });
   return ctx;
 }

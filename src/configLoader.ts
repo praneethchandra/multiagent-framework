@@ -17,6 +17,7 @@ export function loadConfig(configPath: string): { config: AppConfig; baseDir: st
 
 function validateAgentConfigs(config: AppConfig) {
   const toolIds = new Set(config.tools.map((t) => t.id));
+  const storeIds = new Set(config.retrievalStores.map((s) => s.id));
   for (const agent of config.agents) {
     const v = agent.validate;
     if (v) {
@@ -31,6 +32,11 @@ function validateAgentConfigs(config: AppConfig) {
       if (!toolIds.has(toolId)) {
         throw new Error(`agent "${agent.id}" references unknown tool "${toolId}" -- not found in top-level "tools[]"`);
       }
+    }
+    if (agent.retrieval && !storeIds.has(agent.retrieval.store)) {
+      throw new Error(
+        `agent "${agent.id}" references unknown retrieval store "${agent.retrieval.store}" -- not found in top-level "retrievalStores[]"`,
+      );
     }
   }
 }
@@ -66,6 +72,11 @@ function validatePatternConfig(config: AppConfig) {
     case "hierarchical":
       if (!config.hierarchical) {
         throw new Error('pattern "hierarchical" requires a top-level "hierarchical" block');
+      }
+      break;
+    case "plan_execute":
+      if (!config.planExecute) {
+        throw new Error('pattern "plan_execute" requires a top-level "planExecute" block');
       }
       break;
   }

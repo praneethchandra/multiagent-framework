@@ -17,6 +17,14 @@ RESULT:
 <your team's deliverable>
 >>>
 
+To ask a human for guidance, ONLY when facing genuine ambiguity about a
+destructive, irreversible, or highly consequential action:
+ACTION: ask_human
+MESSAGE:
+<<<
+<your specific question for the human>
+>>>
+
 The content inside <<< >>> can be any length and contain code, quotes, or
 newlines freely. You'll be shown a roster of team members (id and what each
 one does) -- pick based on their description. A member may decline if the
