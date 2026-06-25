@@ -1,0 +1,69 @@
+name: hospital-prescription-workflow
+pattern: supervisor
+
+llm:
+  model: claude-sonnet-4-6
+  apiKeyEnv: ANTHROPIC_API_KEY
+  maxTokens: 4096
+
+goal: "Doctor dr_smith needs to prescribe an antibiotic for patient p_jones who has a bacterial respiratory infection. Supervisor sup_lee must validate the prescription against the drug formulary, patient allergies, and regulatory rules before approving."
+
+# Pre-seed context variables (entity IDs and domain data for context assembly)
+vars:
+  tenantId:         "tenant1"
+  doctorId:         "dr_smith"
+  patientId:        "p_jones"
+  supervisorId:     "sup_lee"
+  currentShift:     "morning"
+  drugRules:        "See formulary retrieved via RAG — check for penicillin contraindications"
+  regulatoryRules:  "R-1: complete prescription required. R-2: allergy check mandatory. R-3: drug interaction check required. R-4: controlled substances need co-signature."
+
+contextManager:
+  templateDir:         ../templates/context
+  promotionRulesFile:  ../templates/promotion/promotion.rules.yml
+  allowPhi:            true
+
+memoryManager:
+  warmTierMaxEntries:   500
+  defaultTtlSeconds:    600
+  accessCountThreshold: 3
+
+retrievalStores:
+  - id: hospital_knowledge
+    type: local_files
+    dir: ../knowledge/hospital
+
+agents:
+  - id: hospital_supervisor
+    description: "Validates prescriptions against regulatory rules, formulary, and patient safety checks"
+    promptFile: ../prompts/hospital/hospital_supervisor.md
+    contextRole: supervisor
+
+  - id: doctor_agent
+    description: "Prescribes medication for a patient based on clinical assessment and drug formulary rules"
+    promptFile: ../prompts/hospital/doctor_agent.md
+    contextRole: doctor
+    retrieval:
+      store: hospital_knowledge
+      topK: 3
+    validate:
+      type: llm
+      criteria: "The prescription must include patient ID, drug name, dosage, route, frequency, duration, and clinical rationale. It must not prescribe any drug that is contraindicated."
+      onFail: warn
+
+  - id: patient_agent
+    description: "Provides patient allergy list, current medications, and relevant diagnosis codes"
+    promptFile: ../prompts/hospital/patient_agent.md
+    contextRole: patient
+    retrieval:
+      store: hospital_knowledge
+      topK: 2
+
+supervisorConfig:
+  supervisor:          hospital_supervisor
+  workers:             [doctor_agent, patient_agent]
+  input:               "{{goal}}"
+  maxTurns:            12
+  output:              prescription_decision
+  tokenBudget:         80000
+  contextWindowTurns:  6

@@ -1,0 +1,29 @@
+REGULATORY COMPLIANCE RULES - General Hospital
+
+PRESCRIPTION VALIDATION RULES (REQUIRED for supervisor approval):
+  R-1: Every prescription must contain: patient ID, date, prescribing doctor ID,
+       drug name, dose, route of administration, frequency, and clinical rationale.
+  R-2: Allergy contraindication check is mandatory. If the prescribed drug matches
+       a known patient allergy, prescription must be REJECTED and doctor notified.
+  R-3: Drug-drug interaction check required. Major interactions (per Lexicomp/Micromedex)
+       must be documented and supervisor-approved before dispensing.
+  R-4: Schedule II controlled substances require supervisor co-signature.
+  R-5: Off-formulary drugs require pharmacy director pre-authorization before supervisor approval.
+
+PATIENT SAFETY RULES:
+  S-1: No PHI may leave the hospital system boundary without explicit patient consent.
+  S-2: Allergy information must be verified against the allergy database, not assumed from memory.
+  S-3: For any prescription flagged with a contraindication, the workflow must STOP and
+       ESCALATE to the supervising physician before proceeding.
+  S-4: Pediatric dosing requires weight-based calculation review before approval.
+
+SLA THRESHOLDS:
+  - Prescription turnaround (non-urgent): 2 hours from order to dispensing
+  - Prescription turnaround (urgent/STAT): 30 minutes
+  - Allergy check response: < 5 minutes
+  - Supervisor co-signature (controlled): < 1 hour
+
+COMPLIANCE STANDARDS:
+  - HIPAA: All patient data handling must comply with 45 CFR Parts 160 and 164.
+  - Joint Commission: Medication reconciliation required at every care transition.
+  - State Board of Pharmacy: All dispensing must be documented in the pharmacy system.

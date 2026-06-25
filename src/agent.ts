@@ -6,6 +6,8 @@ import { evalExpr } from "./template.js";
 import { trace } from "./trace.js";
 import { ToolDef, wrapToolResult } from "./tools.js";
 import { RetrievalStore, retrieve, wrapRetrievedContext } from "./retrieval.js";
+import type { ContextManager } from "./context/contextManager.js";
+import type { ContextTree } from "./context/contextTree.js";
 
 const JUDGE_SYSTEM_PROMPT = `You are a strict QA checker. You are given a set of criteria and a piece of
 output to evaluate against them. Respond with exactly "APPROVED" if the
@@ -40,6 +42,9 @@ export class Agent {
   private readonly maxToolTurns: number;
   private readonly retrievalStore?: RetrievalStore;
   private readonly retrievalTopK: number;
+  private readonly contextManager?: ContextManager;
+  private readonly contextTree?: ContextTree;
+  private readonly contextRole?: string;
 
   constructor(
     config: AgentConfig,
@@ -47,6 +52,8 @@ export class Agent {
     baseDir: string,
     toolRegistry: Map<string, ToolDef>,
     retrievalRegistry: Map<string, RetrievalStore>,
+    contextManager?: ContextManager,
+    contextTree?: ContextTree,
   ) {
     this.id = config.id;
     this.role = config.role ?? config.id;
@@ -63,6 +70,9 @@ export class Agent {
     this.maxToolTurns = config.maxToolTurns;
     this.retrievalStore = config.retrieval ? retrievalRegistry.get(config.retrieval.store) : undefined;
     this.retrievalTopK = config.retrieval?.topK ?? 3;
+    this.contextManager = contextManager;
+    this.contextTree = contextTree;
+    this.contextRole = config.contextRole;
   }
 
   // Raw, unvalidated, throwing call -- used for protocol-driven control-flow
@@ -232,6 +242,19 @@ export class Agent {
       let currentMessage = this.retrievalStore
         ? `${wrapRetrievedContext(retrieve(this.retrievalStore, message, this.retrievalTopK))}\n\nTask:\n${message}`
         : message;
+
+      // Context injection (opt-in): prepend role-specific structured context
+      // assembled from the warm tier, vars, and derived temporal/system fields.
+      if (this.contextManager && this.contextRole && this.contextTree) {
+        const assembly = await this.contextManager.assemble(
+          this.contextRole, ctx, this.contextTree, this.id,
+          ctx.vars["tenantId"] ?? "default",
+        );
+        const injection = this.contextManager.buildInjection(assembly);
+        if (injection) currentMessage = `${injection}\n\n${currentMessage}`;
+        for (const w of assembly.warnings) log(`-- [${this.id}] context warning: ${w} --`);
+      }
+
       const baseMessage = currentMessage;
       let output = "";
       let attempt = 0;
@@ -268,10 +291,12 @@ export function buildAgentMap(
   baseDir: string,
   toolRegistry: Map<string, ToolDef>,
   retrievalRegistry: Map<string, RetrievalStore>,
+  contextManager?: ContextManager,
+  contextTree?: ContextTree,
 ): Map<string, Agent> {
   const map = new Map<string, Agent>();
   for (const cfg of agentConfigs) {
-    map.set(cfg.id, new Agent(cfg, llm, baseDir, toolRegistry, retrievalRegistry));
+    map.set(cfg.id, new Agent(cfg, llm, baseDir, toolRegistry, retrievalRegistry, contextManager, contextTree));
   }
   return map;
 }

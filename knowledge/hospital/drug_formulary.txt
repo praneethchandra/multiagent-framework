@@ -1,0 +1,43 @@
+DRUG FORMULARY - General Hospital (Effective 2025-Q3)
+
+APPROVED MEDICATIONS:
+
+Amoxicillin 500mg (oral capsule)
+  Indication: Bacterial infections (respiratory, urinary tract, skin)
+  Contraindications: Known penicillin or cephalosporin allergy
+  Max duration: 14 days without re-evaluation
+  Notes: Requires culture sensitivity when available
+
+Metformin 1000mg (oral tablet)
+  Indication: Type 2 Diabetes Mellitus (HbA1c management)
+  Contraindications: Renal impairment (eGFR < 30 mL/min/1.73m2), active hepatic disease
+  Max dose: 2000mg/day
+  Notes: Hold 48 hours before/after contrast media procedures
+
+Lisinopril 10mg (oral tablet)
+  Indication: Hypertension, heart failure (EF < 40%), diabetic nephropathy
+  Contraindications: History of ACE inhibitor-induced angioedema, bilateral renal artery stenosis, pregnancy
+  Notes: Monitor potassium and creatinine at 1 week after initiation
+
+Ibuprofen 400mg (oral tablet)
+  Indication: Mild-to-moderate pain, inflammation, fever
+  Contraindications: Active GI bleeding, severe renal impairment (GFR < 30), NSAID hypersensitivity
+  Max duration: 5 days acute pain; requires clinical review beyond 5 days
+  Notes: Use with caution in cardiovascular disease
+
+Ondansetron 4mg (oral/IV)
+  Indication: Nausea and vomiting (post-operative, chemotherapy-induced)
+  Contraindications: Congenital long QT syndrome; caution with QT-prolonging agents
+  Max dose: 16mg/day
+
+CONTROLLED SUBSTANCES (Schedule II-IV):
+  - All Schedule II controlled substances require supervisor co-signature before dispensing.
+  - Electronic prescriptions for Schedule II require dual authentication.
+  - Opioid prescriptions require documented pain assessment and prior authorization check.
+
+REGULATORY RULES:
+  1. All prescriptions must include: patient ID, date, drug name, dose, route, frequency, duration, clinical rationale.
+  2. Any allergy contraindication MUST be flagged to the supervising physician before the prescription is issued.
+  3. Drug-drug interactions classified as MAJOR must be flagged and approved by supervisor before prescribing.
+  4. Prescriptions for high-alert medications (anticoagulants, insulin, concentrated electrolytes) require independent double-check.
+  5. Off-formulary medications require pharmacy director pre-authorization.

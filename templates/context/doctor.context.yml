@@ -1,0 +1,57 @@
+role: doctor
+fields:
+  doctorId:
+    type: UserContext
+    ttl: 3600
+    requirement: REQUIRED
+    phi: false
+    promote: always
+    promote_ttl: 7200
+
+  licenseNumber:
+    type: UserContext
+    ttl: 3600
+    requirement: OPTIONAL
+    phi: false
+    promote: access_count
+    promote_ttl: 7200
+
+  patientName:
+    type: UserContext
+    ttl: 900
+    requirement: OPTIONAL
+    phi: true
+    promote: explicit
+    evict_on: [discharge]
+
+  currentShift:
+    type: TemporalContext
+    ttl: 1800
+    requirement: OPTIONAL
+    phi: false
+    promote: always
+    promote_ttl: 1800
+
+  drugRules:
+    type: DomainContext
+    ttl: 86400
+    requirement: REQUIRED
+    phi: false
+    promote: always
+    promote_ttl: 86400
+    evict_on: [formulary_update]
+
+  patientHistory:
+    type: RetrievalContext
+    ttl: 1800
+    requirement: GRACEFUL_FALLBACK
+    phi: true
+    promote: explicit
+    evict_on: [diagnosis_update, discharge]
+
+  modelId:
+    type: SystemContext
+    ttl: 0
+    requirement: REQUIRED
+    phi: false
+    promote: always

@@ -1,0 +1,14 @@
+# Promotion rules override per-field declarations for matching patterns.
+# More-specific patterns take precedence. Applied in order top-to-bottom.
+rules:
+  - match: "phi:true"
+    promote: explicit        # PHI fields never auto-promote regardless of field setting
+  - match: "DomainContext"
+    promote: always
+    promote_ttl: 86400       # domain rules cached for 24 hours
+  - match: "TemporalContext"
+    promote: always
+    promote_ttl: 1800        # temporal context cached for 30 minutes
+  - match: "SystemContext"
+    promote: always
+    promote_ttl: 0           # system context: no expiry

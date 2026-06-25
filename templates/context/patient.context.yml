@@ -1,0 +1,51 @@
+role: patient
+fields:
+  patientId:
+    type: UserContext
+    ttl: 3600
+    requirement: REQUIRED
+    phi: true
+    promote: explicit
+    evict_on: [discharge]
+
+  currentRoom:
+    type: UserContext
+    ttl: 300
+    requirement: OPTIONAL
+    phi: false
+    promote: always
+    promote_ttl: 300
+    evict_on: [room_change, transfer, admission, discharge]
+
+  currentUnit:
+    type: UserContext
+    ttl: 300
+    requirement: OPTIONAL
+    phi: false
+    promote: always
+    promote_ttl: 300
+    evict_on: [room_change, transfer, admission, discharge]
+
+  diagnosisCodes:
+    type: UserContext
+    ttl: 3600
+    requirement: OPTIONAL
+    phi: true
+    promote: explicit
+    evict_on: [diagnosis_update, discharge]
+
+  allergies:
+    type: UserContext
+    ttl: 7200
+    requirement: GRACEFUL_FALLBACK
+    phi: true
+    promote: explicit
+    evict_on: [discharge]
+
+  currentMedications:
+    type: RetrievalContext
+    ttl: 1800
+    requirement: GRACEFUL_FALLBACK
+    phi: true
+    promote: explicit
+    evict_on: [diagnosis_update, discharge]

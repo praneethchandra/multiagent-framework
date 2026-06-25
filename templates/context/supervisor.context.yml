@@ -1,0 +1,48 @@
+role: supervisor
+fields:
+  supervisorId:
+    type: UserContext
+    ttl: 3600
+    requirement: REQUIRED
+    phi: false
+    promote: always
+    promote_ttl: 7200
+
+  regulatoryRules:
+    type: DomainContext
+    ttl: 86400
+    requirement: REQUIRED
+    phi: false
+    promote: always
+    promote_ttl: 86400
+    evict_on: [regulatory_update]
+
+  slaThresholds:
+    type: DomainContext
+    ttl: 3600
+    requirement: OPTIONAL
+    phi: false
+    promote: always
+    promote_ttl: 3600
+
+  doctorSummary:
+    type: ConversationContext
+    ttl: 900
+    requirement: OPTIONAL
+    phi: false
+    promote: always
+
+  fiscalPeriod:
+    type: TemporalContext
+    ttl: 86400
+    requirement: OPTIONAL
+    phi: false
+    promote: always
+    promote_ttl: 86400
+
+  requestTimestamp:
+    type: TemporalContext
+    ttl: 0
+    requirement: OPTIONAL
+    phi: false
+    promote: always

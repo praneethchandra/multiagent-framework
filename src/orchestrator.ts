@@ -2,6 +2,9 @@ import { AppConfig, RunContext } from "./types.js";
 import { buildAgentMap } from "./agent.js";
 import { buildToolRegistry } from "./tools.js";
 import { buildRetrievalRegistry } from "./retrieval.js";
+import { ContextManager } from "./context/contextManager.js";
+import { MemoryManager } from "./context/memoryManager.js";
+import { ContextTree } from "./context/contextTree.js";
 import { runSequential, SequentialResumeState } from "./patterns/sequential.js";
 import { runSupervisor, SupervisorResumeState } from "./patterns/supervisor.js";
 import { runParallel } from "./patterns/parallel.js";
@@ -22,7 +25,16 @@ export async function runApp(
 ): Promise<RunContext> {
   const toolRegistry = buildToolRegistry(config.tools, baseDir);
   const retrievalRegistry = buildRetrievalRegistry(config.retrievalStores, baseDir);
-  const agents = buildAgentMap(config.agents, config.llm, baseDir, toolRegistry, retrievalRegistry);
+
+  // ContextManager + MemoryManager are opt-in: only constructed when the config
+  // declares them. Absent blocks = zero behavior change for existing configs.
+  const memMgr = config.memoryManager ? new MemoryManager(config.memoryManager) : undefined;
+  const ctxMgr = config.contextManager
+    ? new ContextManager(config.contextManager, baseDir, memMgr)
+    : undefined;
+  const contextTree = ctxMgr ? new ContextTree() : undefined;
+
+  const agents = buildAgentMap(config.agents, config.llm, baseDir, toolRegistry, retrievalRegistry, ctxMgr, contextTree);
   const agentConfigs = new Map(config.agents.map((a) => [a.id, a]));
 
   // Checkpoint-Resume (spec #3/#4): restore vars/tokenUsage from a prior
@@ -38,7 +50,7 @@ export async function runApp(
   }
 
   const ctx: RunContext = {
-    vars: resumeData?.vars ?? {},
+    vars: { ...(config.vars ?? {}), ...(resumeData?.vars ?? {}) },
     goal: config.goal,
     tokenUsage: resumeData?.tokenUsage ?? { input: 0, output: 0 },
   };

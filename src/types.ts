@@ -29,6 +29,52 @@ export const ToolConfigSchema = z.object({
   baseDir: z.string().optional(), // file_read only; relative to the config file's directory
 });
 
+// ── ContextManager + MemoryManager schemas ────────────────────────────────
+
+export const ContextFieldMetaSchema = z.object({
+  type: z.enum(["UserContext", "DomainContext", "SystemContext", "ConversationContext", "RetrievalContext", "TemporalContext"]),
+  ttl: z.number().default(300),
+  requirement: z.enum(["REQUIRED", "OPTIONAL", "GRACEFUL_FALLBACK"]).default("OPTIONAL"),
+  phi: z.boolean().default(false),
+  promote: z.enum(["always", "access_count", "explicit"]).default("always"),
+  promote_ttl: z.number().optional(),
+  evict_on: z.array(z.string()).default([]),
+});
+
+export const ContextTemplateSchema = z.object({
+  role: z.string(),
+  fields: z.record(z.string(), ContextFieldMetaSchema),
+});
+
+export const TokenBudgetSplitSchema = z.object({
+  system:       z.number().default(0.10),
+  user:         z.number().default(0.20),
+  domain:       z.number().default(0.30),
+  conversation: z.number().default(0.40),
+});
+
+export const ContextManagerConfigSchema = z.object({
+  templateDir:        z.string().default("templates/context"),
+  promotionRulesFile: z.string().optional(),
+  tokenBudgetSplit:   TokenBudgetSplitSchema.default({}),
+  priorityChain:      z.array(z.string()).default(["Regulatory", "System", "Domain", "User", "Conversation"]),
+  allowPhi:           z.boolean().default(false),
+});
+
+export const MemoryManagerConfigSchema = z.object({
+  warmTierMaxEntries:    z.number().default(1000),
+  defaultTtlSeconds:     z.number().default(300),
+  accessCountThreshold:  z.number().default(3),
+});
+
+export type ContextFieldMeta        = z.infer<typeof ContextFieldMetaSchema>;
+export type ContextTemplate         = z.infer<typeof ContextTemplateSchema>;
+export type ContextManagerConfig    = z.infer<typeof ContextManagerConfigSchema>;
+export type ContextManagerConfigInput = z.input<typeof ContextManagerConfigSchema>;
+export type MemoryManagerConfig     = z.infer<typeof MemoryManagerConfigSchema>;
+
+// ─────────────────────────────────────────────────────────────────────────────
+
 export const AgentConfigSchema = z.object({
   id: z.string(),
   role: z.string().optional(),
@@ -67,6 +113,7 @@ export const AgentConfigSchema = z.object({
       topK: z.number().default(3),
     })
     .optional(),
+  contextRole: z.string().optional(), // maps to a *.context.yml template file
 });
 
 export const StepSchema = z.object({
@@ -172,6 +219,9 @@ export const AppConfigSchema = z.object({
   supervisorConfig: SupervisorConfigSchema.optional(), // used by "supervisor"
   hierarchical: HierarchicalConfigSchema.optional(), // used by "hierarchical"
   planExecute: PlanExecuteConfigSchema.optional(), // used by "plan_execute"
+  contextManager: ContextManagerConfigSchema.optional(), // opt-in context injection
+  memoryManager:  MemoryManagerConfigSchema.optional(),  // opt-in warm-tier cache
+  vars: z.record(z.string(), z.string()).optional(),     // pre-seed RunContext.vars
 });
 
 export type LlmConfig = z.infer<typeof LlmConfigSchema>;

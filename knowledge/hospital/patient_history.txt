@@ -1,0 +1,32 @@
+PATIENT RECORD - SYNTHETIC TEST DATA
+Patient ID: p_jones
+Name: [PHI - accessible only with allowPhi:true]
+DOB: [PHI]
+MRN: MRN-2025-00142
+
+ALLERGIES (confirmed):
+  - Penicillin: Hives and urticaria (confirmed reaction 2019)
+  - Sulfonamides: Rash (suspected reaction 2021)
+  NOTE: Penicillin allergy means ALL penicillin-class antibiotics are contraindicated,
+        including Amoxicillin, Ampicillin, Piperacillin.
+
+CURRENT DIAGNOSES:
+  - Type 2 Diabetes Mellitus (HbA1c 7.8%, diagnosed 2020)
+  - Hypertension (Stage 1, diagnosed 2022)
+  - Bacterial respiratory infection (current admission, Jan 2025)
+
+CURRENT MEDICATIONS (at admission):
+  - Metformin 1000mg PO BID (stable, well-tolerated)
+  - Lisinopril 10mg PO daily (BP controlled 128/82 last reading)
+
+RECENT LAB VALUES (Jan 2025):
+  - eGFR: 68 mL/min/1.73m2 (adequate, Metformin safe)
+  - Potassium: 4.1 mEq/L (normal)
+  - HbA1c: 7.8%
+  - WBC: 14.2 x10^3/uL (elevated, consistent with active infection)
+
+ADMISSION NOTE:
+Patient admitted for bacterial respiratory infection. Culture pending.
+Requires antibiotic therapy. NOTE: Penicillin-class antibiotics (including
+Amoxicillin) are CONTRAINDICATED due to confirmed penicillin allergy with hives.
+Consider alternative: Azithromycin or Doxycycline per respiratory infection protocol.
