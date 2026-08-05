@@ -1,0 +1,1189 @@
+<title>Multiagent Framework — White Paper</title>
+<style>
+/* ── Material tokens ── */
+:root {
+  --md-primary:       #1565C0;
+  --md-primary-dark:  #0D47A1;
+  --md-accent:        #00BCD4;
+  --md-bg:            #FFFFFF;
+  --md-bg-alt:        #F5F5F5;
+  --md-surface:       #FAFAFA;
+  --md-border:        #E0E0E0;
+  --md-ink:           #212121;
+  --md-ink-mid:       #616161;
+  --md-ink-faint:     #9E9E9E;
+  --md-code-bg:       #F5F5F5;
+  --md-code-border:   #E0E0E0;
+  --md-admonition-note: #448AFF;
+  --md-admonition-tip:  #00BFA5;
+  --md-admonition-warn: #FF6D00;
+  --nav-width:        260px;
+  --toc-width:        220px;
+  --header-h:         48px;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --md-primary:      #1E88E5;
+    --md-primary-dark: #1565C0;
+    --md-accent:       #00E5FF;
+    --md-bg:           #1A1A2E;
+    --md-bg-alt:       #16213E;
+    --md-surface:      #0F3460;
+    --md-border:       #2A3A5C;
+    --md-ink:          #E8EAF0;
+    --md-ink-mid:      #90A4AE;
+    --md-ink-faint:    #546E7A;
+    --md-code-bg:      #0D1B2E;
+    --md-code-border:  #1E3050;
+  }
+}
+:root[data-theme="light"] {
+  --md-primary:#1565C0; --md-primary-dark:#0D47A1; --md-accent:#00BCD4;
+  --md-bg:#FFFFFF; --md-bg-alt:#F5F5F5; --md-surface:#FAFAFA;
+  --md-border:#E0E0E0; --md-ink:#212121; --md-ink-mid:#616161; --md-ink-faint:#9E9E9E;
+  --md-code-bg:#F5F5F5; --md-code-border:#E0E0E0;
+}
+:root[data-theme="dark"] {
+  --md-primary:#1E88E5; --md-primary-dark:#1565C0; --md-accent:#00E5FF;
+  --md-bg:#1A1A2E; --md-bg-alt:#16213E; --md-surface:#0F3460;
+  --md-border:#2A3A5C; --md-ink:#E8EAF0; --md-ink-mid:#90A4AE; --md-ink-faint:#546E7A;
+  --md-code-bg:#0D1B2E; --md-code-border:#1E3050;
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html { font-size: 16px; scroll-behavior: smooth; }
+body {
+  background: var(--md-bg);
+  color: var(--md-ink);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, sans-serif;
+  font-size: 0.9rem;
+  line-height: 1.7;
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+}
+
+/* ═══ HEADER ═══ */
+header {
+  position: fixed;
+  top: 0; left: 0; right: 0;
+  height: var(--header-h);
+  background: var(--md-primary);
+  display: flex;
+  align-items: center;
+  padding: 0 1rem;
+  z-index: 100;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.24);
+  gap: 1rem;
+}
+.header-logo {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  text-decoration: none;
+  color: #fff;
+  font-weight: 700;
+  font-size: 1rem;
+  white-space: nowrap;
+}
+.header-logo svg { width: 24px; height: 24px; fill: rgba(255,255,255,0.9); flex-shrink: 0; }
+.header-search {
+  flex: 1;
+  max-width: 420px;
+  position: relative;
+}
+.header-search input {
+  width: 100%;
+  height: 32px;
+  background: rgba(255,255,255,0.15);
+  border: none;
+  border-radius: 4px;
+  color: #fff;
+  padding: 0 0.75rem 0 2.2rem;
+  font-size: 0.85rem;
+  outline: none;
+  transition: background 0.2s;
+}
+.header-search input::placeholder { color: rgba(255,255,255,0.6); }
+.header-search input:focus { background: rgba(255,255,255,0.25); }
+.header-search .search-icon {
+  position: absolute;
+  left: 0.55rem; top: 50%;
+  transform: translateY(-50%);
+  color: rgba(255,255,255,0.7);
+  font-size: 1rem;
+  pointer-events: none;
+}
+.header-actions {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.header-actions a, .theme-toggle {
+  color: rgba(255,255,255,0.8);
+  text-decoration: none;
+  font-size: 0.82rem;
+  padding: 0.25rem 0.5rem;
+  border-radius: 4px;
+  border: none;
+  background: none;
+  cursor: pointer;
+  transition: background 0.15s;
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+.header-actions a:hover, .theme-toggle:hover { background: rgba(255,255,255,0.15); color: #fff; }
+
+/* ═══ LAYOUT ═══ */
+.layout {
+  display: flex;
+  margin-top: var(--header-h);
+  flex: 1;
+}
+
+/* ═══ LEFT NAV ═══ */
+nav.sidenav {
+  position: fixed;
+  top: var(--header-h);
+  left: 0;
+  bottom: 0;
+  width: var(--nav-width);
+  background: var(--md-bg-alt);
+  border-right: 1px solid var(--md-border);
+  overflow-y: auto;
+  padding-bottom: 2rem;
+}
+nav.sidenav .nav-section {
+  padding: 0.9rem 1rem 0.25rem;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--md-ink-faint);
+}
+nav.sidenav a {
+  display: flex;
+  align-items: center;
+  padding: 0.34rem 1rem 0.34rem 1.25rem;
+  font-size: 0.83rem;
+  color: var(--md-ink-mid);
+  text-decoration: none;
+  border-left: 3px solid transparent;
+  transition: color 0.15s, background 0.15s, border-color 0.15s;
+  line-height: 1.35;
+}
+nav.sidenav a:hover { color: var(--md-ink); background: color-mix(in srgb, var(--md-primary) 8%, transparent); }
+nav.sidenav a.active { color: var(--md-primary); border-left-color: var(--md-primary); background: color-mix(in srgb, var(--md-primary) 10%, transparent); font-weight: 600; }
+nav.sidenav a .num { font-size: 0.68rem; color: var(--md-ink-faint); margin-right: 0.4rem; font-variant-numeric: tabular-nums; }
+
+/* ═══ MAIN + TOC ═══ */
+main {
+  margin-left: var(--nav-width);
+  margin-right: var(--toc-width);
+  flex: 1;
+  min-width: 0;
+  padding: 2.5rem 2rem 4rem;
+  max-width: 860px;
+}
+
+/* ═══ RIGHT TOC ═══ */
+aside.toc {
+  position: fixed;
+  top: var(--header-h);
+  right: 0;
+  width: var(--toc-width);
+  bottom: 0;
+  overflow-y: auto;
+  padding: 1.5rem 1rem 2rem;
+  border-left: 1px solid var(--md-border);
+  background: var(--md-bg);
+}
+aside.toc .toc-title {
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--md-ink-faint);
+  margin-bottom: 0.5rem;
+}
+aside.toc a {
+  display: block;
+  padding: 0.2rem 0;
+  font-size: 0.78rem;
+  color: var(--md-ink-mid);
+  text-decoration: none;
+  border-left: 2px solid transparent;
+  padding-left: 0.65rem;
+  line-height: 1.4;
+  transition: color 0.15s, border-color 0.15s;
+}
+aside.toc a:hover { color: var(--md-primary); }
+aside.toc a.active { color: var(--md-primary); border-left-color: var(--md-primary); }
+aside.toc a.toc-h3 { padding-left: 1.3rem; font-size: 0.73rem; color: var(--md-ink-faint); }
+
+/* ═══ CONTENT TYPOGRAPHY ═══ */
+.page-title {
+  font-size: 2rem;
+  font-weight: 700;
+  line-height: 1.2;
+  margin-bottom: 0.5rem;
+  color: var(--md-ink);
+}
+.page-subtitle {
+  font-size: 1rem;
+  color: var(--md-ink-mid);
+  margin-bottom: 2rem;
+  padding-bottom: 1.5rem;
+  border-bottom: 1px solid var(--md-border);
+}
+h2 {
+  font-size: 1.4rem;
+  font-weight: 700;
+  margin: 2.5rem 0 0.75rem;
+  padding-bottom: 0.35rem;
+  border-bottom: 1px solid var(--md-border);
+  color: var(--md-ink);
+  display: flex;
+  align-items: baseline;
+  gap: 0.6rem;
+}
+h2 .badge {
+  font-size: 0.62rem;
+  font-weight: 700;
+  background: var(--md-primary);
+  color: #fff;
+  padding: 0.1rem 0.45rem;
+  border-radius: 3px;
+  letter-spacing: 0.06em;
+}
+h3 {
+  font-size: 1.05rem;
+  font-weight: 600;
+  margin: 1.5rem 0 0.5rem;
+  color: var(--md-ink);
+}
+p { margin-bottom: 0.85rem; }
+a { color: var(--md-primary); text-decoration: none; }
+a:hover { text-decoration: underline; }
+ul, ol { padding-left: 1.5rem; margin-bottom: 0.85rem; }
+li { margin-bottom: 0.2rem; }
+
+/* ═══ CODE ═══ */
+pre {
+  background: var(--md-code-bg);
+  border: 1px solid var(--md-code-border);
+  border-radius: 4px;
+  padding: 1rem 1.1rem;
+  overflow-x: auto;
+  font-size: 0.8rem;
+  line-height: 1.55;
+  margin: 0.5rem 0 1.25rem;
+  font-family: 'SFMono-Regular', 'Fira Code', 'Fira Mono', Consolas, monospace;
+  position: relative;
+}
+pre::before {
+  content: attr(data-lang);
+  position: absolute;
+  top: 0.4rem; right: 0.75rem;
+  font-size: 0.62rem;
+  color: var(--md-ink-faint);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+code {
+  font-family: 'SFMono-Regular', 'Fira Code', Consolas, monospace;
+  font-size: 0.83em;
+  background: var(--md-code-bg);
+  border: 1px solid var(--md-code-border);
+  padding: 0.1em 0.35em;
+  border-radius: 3px;
+  color: var(--md-primary);
+}
+pre code { background: none; border: none; padding: 0; font-size: inherit; color: inherit; }
+
+/* ═══ ADMONITIONS ═══ */
+.admonition {
+  border-left: 4px solid var(--md-admonition-note);
+  background: color-mix(in srgb, var(--md-admonition-note) 8%, var(--md-bg));
+  border-radius: 0 4px 4px 0;
+  padding: 0.75rem 1rem;
+  margin: 1rem 0 1.25rem;
+  font-size: 0.875rem;
+}
+.admonition.tip { border-left-color: var(--md-admonition-tip); background: color-mix(in srgb, var(--md-admonition-tip) 8%, var(--md-bg)); }
+.admonition.warning { border-left-color: var(--md-admonition-warn); background: color-mix(in srgb, var(--md-admonition-warn) 8%, var(--md-bg)); }
+.admonition-title {
+  font-weight: 700;
+  font-size: 0.78rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--md-admonition-note);
+  margin-bottom: 0.4rem;
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+.admonition.tip .admonition-title { color: var(--md-admonition-tip); }
+.admonition.warning .admonition-title { color: var(--md-admonition-warn); }
+.admonition p { margin: 0; }
+
+/* ═══ WWWW GRID ═══ */
+.wwww {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.75rem;
+  margin: 1rem 0 1.25rem;
+}
+.wwww-card {
+  background: var(--md-surface);
+  border: 1px solid var(--md-border);
+  border-radius: 4px;
+  padding: 0.75rem 0.9rem;
+}
+.wwww-label {
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--md-primary);
+  margin-bottom: 0.3rem;
+}
+.wwww-card p { font-size: 0.84rem; margin: 0; line-height: 1.55; color: var(--md-ink-mid); }
+
+/* ═══ DEFINITION ═══ */
+.definition {
+  background: var(--md-surface);
+  border: 1px solid var(--md-border);
+  border-radius: 4px;
+  padding: 1rem 1.1rem;
+  margin: 0.75rem 0 1.25rem;
+  font-size: 0.88rem;
+}
+.definition-label {
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--md-ink-faint);
+  margin-bottom: 0.4rem;
+}
+.definition p { margin: 0; color: var(--md-ink-mid); font-style: italic; }
+
+/* ═══ TABLE ═══ */
+.md-table-wrap { overflow-x: auto; margin-bottom: 1rem; }
+table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+th { background: var(--md-bg-alt); font-weight: 600; text-align: left; padding: 0.5rem 0.75rem; border-bottom: 2px solid var(--md-border); }
+td { padding: 0.45rem 0.75rem; border-bottom: 1px solid var(--md-border); }
+tr:hover td { background: color-mix(in srgb, var(--md-primary) 4%, var(--md-bg)); }
+
+/* ═══ FOOTER ═══ */
+footer {
+  margin-left: var(--nav-width);
+  margin-right: var(--toc-width);
+  padding: 1.25rem 2rem;
+  border-top: 1px solid var(--md-border);
+  font-size: 0.78rem;
+  color: var(--md-ink-faint);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+/* ═══ RESPONSIVE ═══ */
+@media (max-width: 1100px) {
+  aside.toc { display: none; }
+  main { margin-right: 0; }
+}
+@media (max-width: 768px) {
+  nav.sidenav { display: none; }
+  main { margin-left: 0; padding: 1.5rem 1rem 3rem; }
+  footer { margin-left: 0; margin-right: 0; }
+  .wwww { grid-template-columns: 1fr; }
+}
+:target { scroll-margin-top: calc(var(--header-h) + 1rem); }
+</style>
+
+<!-- HEADER -->
+<header>
+  <a href="#" class="header-logo">
+    <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
+    Multiagent Framework
+  </a>
+  <div class="header-search">
+    <span class="search-icon">&#128269;</span>
+    <input type="search" placeholder="Search docs..." />
+  </div>
+  <div class="header-actions">
+    <a href="https://github.com/praneethchandra/multiagent-framework" target="_blank">&#128279; GitHub</a>
+    <button class="theme-toggle" onclick="toggleTheme()" title="Toggle theme">&#9680;</button>
+  </div>
+</header>
+
+<div class="layout">
+
+<!-- LEFT NAV -->
+<nav class="sidenav">
+  <div class="nav-section">Foundation</div>
+  <a href="#s1"><span class="num">01</span>Config-Driven Philosophy</a>
+  <a href="#s2"><span class="num">02</span>Prompt Engineering</a>
+  <div class="nav-section">Execution Patterns</div>
+  <a href="#s3"><span class="num">03</span>Sequential</a>
+  <a href="#s4"><span class="num">04</span>Supervisor</a>
+  <a href="#s5"><span class="num">05</span>Parallel</a>
+  <a href="#s6"><span class="num">06</span>Hierarchical</a>
+  <a href="#s7"><span class="num">07</span>Plan-Execute</a>
+  <div class="nav-section">Context Layer (L2)</div>
+  <a href="#s8"><span class="num">08</span>Context Engineering</a>
+  <a href="#s9"><span class="num">09</span>Memory Management</a>
+  <a href="#s10"><span class="num">10</span>Dynamic Context Events</a>
+  <a href="#s11"><span class="num">11</span>PHI Gating &amp; Compliance</a>
+  <div class="nav-section">Graph Layer (L3)</div>
+  <a href="#s12"><span class="num">12</span>Graph Engineering</a>
+  <a href="#s13"><span class="num">13</span>Agent Graph Pattern</a>
+  <a href="#s14"><span class="num">14</span>Knowledge Graph</a>
+  <a href="#s15"><span class="num">15</span>GraphContext Fields</a>
+  <div class="nav-section">Reliability</div>
+  <a href="#s16"><span class="num">16</span>RAG</a>
+  <a href="#s17"><span class="num">17</span>Tools &amp; ReAct</a>
+  <a href="#s18"><span class="num">18</span>Output Validation</a>
+  <a href="#s19"><span class="num">19</span>Human-in-the-Loop</a>
+  <a href="#s20"><span class="num">20</span>Checkpoint &amp; Resume</a>
+  <a href="#s21"><span class="num">21</span>Observability</a>
+  <a href="#s22"><span class="num">22</span>Budget Management</a>
+  <a href="#s23"><span class="num">23</span>Typed Handoffs</a>
+</nav>
+
+<!-- MAIN -->
+<main>
+
+<h1 class="page-title">Multiagent Framework — White Paper</h1>
+<p class="page-subtitle">A config-driven architecture for building production AI systems — where YAML replaces TypeScript for every domain decision.</p>
+
+<!-- ══ S1 ══ -->
+<section id="s1">
+<h2><span class="badge">01</span> Config-Driven Philosophy</h2>
+
+<h3>Introduction</h3>
+<p>Most AI frameworks couple architecture to code. Adding a new agent, swapping a pattern, or connecting a domain knowledge source requires editing TypeScript, recompiling, and redeploying. This framework inverts that relationship: the YAML config file <em>is</em> the application.</p>
+
+<div class="definition">
+  <div class="definition-label">Definition</div>
+  <p>A config-driven framework declares the complete runtime behavior — agents, patterns, context, memory, graph topology — in structured data files, with the engine remaining domain-agnostic TypeScript that interprets those declarations.</p>
+</div>
+
+<div class="wwww">
+  <div class="wwww-card"><div class="wwww-label">What</div><p>Every structural decision lives in YAML. TypeScript contains only general-purpose machinery — parsers, executors, validators.</p></div>
+  <div class="wwww-card"><div class="wwww-label">Why</div><p>Domain experts extend the system without writing code. Reviews are YAML diffs, not interleaved logic diffs.</p></div>
+  <div class="wwww-card"><div class="wwww-label">When</div><p>Multiple domains sharing one codebase without coupling — healthcare, legal, finance on the same engine.</p></div>
+  <div class="wwww-card"><div class="wwww-label">Where</div><p>At every layer: agent identity, orchestration pattern, context templates, graph topology, knowledge nodes and edges.</p></div>
+</div>
+
+<h3>In This Repository</h3>
+<pre data-lang="yaml">name: Hospital Prescription Workflow
+pattern: supervisor
+goal: "Review and approve Dr. Chen's prescription for patient Jones"
+llm:
+  model: claude-sonnet-4-6
+agents:
+  - id: doctor
+    role: Doctor
+    promptFile: prompts/doctor.md
+    contextRole: doctor       # links to templates/context/doctor.context.yml
+  - id: supervisor
+    isSupervisor: true
+    workers: [doctor, pharmacist]
+supervisorConfig:
+  supervisor: supervisor
+  input: "{{goal}}"
+  maxTurns: 8</pre>
+
+<h3>Code Invocation</h3>
+<pre data-lang="typescript">import { loadConfig } from "./src/config.js";
+import { runApp }    from "./src/orchestrator.js";
+
+const config = loadConfig("configs/hospital-prescription.yaml");
+const ctx    = await runApp(config, path.dirname(configPath));
+// That's it. No TypeScript changes per domain.</pre>
+
+<div class="admonition tip">
+  <div class="admonition-title">&#10003; Zero-code extension</div>
+  <p>To add a new domain (e.g. legal review), copy a config file, change prompts and vars. No TypeScript changes required.</p>
+</div>
+</section>
+
+<!-- ══ S2 ══ -->
+<section id="s2">
+<h2><span class="badge">02</span> Prompt Engineering (Layer 1)</h2>
+
+<div class="definition">
+  <div class="definition-label">Definition</div>
+  <p>The practice of crafting model instructions — system prompts, role definitions, output format guidance — to reliably elicit desired behavior from a language model.</p>
+</div>
+
+<div class="wwww">
+  <div class="wwww-card"><div class="wwww-label">What</div><p>System prompts, inline instructions, role definitions, output format constraints, and few-shot examples.</p></div>
+  <div class="wwww-card"><div class="wwww-label">Why</div><p>The model has no external memory. Every behavioral constraint must arrive within the context window.</p></div>
+  <div class="wwww-card"><div class="wwww-label">When</div><p>Before any other layer — prompts are resolved first; context injection and tool results sit below them in message structure.</p></div>
+  <div class="wwww-card"><div class="wwww-label">Where</div><p><code>agents[].prompt</code> (inline) or <code>agents[].promptFile</code> (path relative to config). Both support <code>{{vars}}</code> interpolation.</p></div>
+</div>
+
+<h3>Config Example</h3>
+<pre data-lang="yaml">agents:
+  - id: doctor
+    promptFile: prompts/doctor.md  # relative to config directory
+  - id: pharmacist
+    prompt: |
+      You are a licensed pharmacist. Review the prescription for
+      drug interactions and formulary compliance.
+      Respond with: APPROVED, FLAGGED, or REJECTED with rationale.</pre>
+</section>
+
+<!-- ══ S3 ══ -->
+<section id="s3">
+<h2><span class="badge">03</span> Sequential Pattern</h2>
+
+<div class="definition">
+  <div class="definition-label">Definition</div>
+  <p>A fixed, ordered list of agent steps where each step's output is stored as a named variable and referenced as the next step's input via template strings.</p>
+</div>
+
+<div class="wwww">
+  <div class="wwww-card"><div class="wwww-label">What</div><p>Step A → Step B → Step C. Each step reads from <code>vars</code> and writes to <code>vars</code>.</p></div>
+  <div class="wwww-card"><div class="wwww-label">Why</div><p>Simple assembly lines — summarize → translate → format — where each transformation depends exactly on the previous result.</p></div>
+  <div class="wwww-card"><div class="wwww-label">When</div><p>Tasks with a clear linear decomposition and no branching or concurrency.</p></div>
+  <div class="wwww-card"><div class="wwww-label">Where</div><p><code>pattern: sequential</code> + <code>workflow.steps[]</code>. Checkpoint/resume supported per step.</p></div>
+</div>
+
+<pre data-lang="yaml">pattern: sequential
+workflow:
+  steps:
+    - agent: researcher
+      input:  "{{goal}}"
+      output: raw_research
+    - agent: writer
+      input:  "Summarize this research: {{raw_research}}"
+      output: draft
+    - agent: editor
+      input:  "Polish this draft: {{draft}}"
+      output: final_output</pre>
+</section>
+
+<!-- ══ S4 ══ -->
+<section id="s4">
+<h2><span class="badge">04</span> Supervisor Pattern</h2>
+
+<div class="definition">
+  <div class="definition-label">Definition</div>
+  <p>A single orchestrating agent dynamically delegates tasks to a roster of worker agents, synthesizing their responses until the goal is met or the turn budget is exhausted.</p>
+</div>
+
+<div class="wwww">
+  <div class="wwww-card"><div class="wwww-label">What</div><p>One supervisor LLM decides which worker to call next, interprets results, and either delegates again or declares completion.</p></div>
+  <div class="wwww-card"><div class="wwww-label">Why</div><p>Dynamic delegation — the supervisor decides at runtime which specialist to consult, not a fixed sequence.</p></div>
+  <div class="wwww-card"><div class="wwww-label">When</div><p>Complex goals requiring multiple experts in an order that depends on intermediate results.</p></div>
+  <div class="wwww-card"><div class="wwww-label">Where</div><p><code>pattern: supervisor</code> + <code>supervisorConfig:</code>. Workers listed under <code>supervisorConfig.workers</code>.</p></div>
+</div>
+
+<pre data-lang="yaml">pattern: supervisor
+supervisorConfig:
+  supervisor: pharmacy_supervisor
+  workers:    [doctor, pharmacist, drug_checker]
+  input:      "{{goal}}"
+  maxTurns:   10
+  tokenBudget: 50000
+  contextWindowTurns: 6   # older turns collapsed to summary
+
+agents:
+  - id: pharmacy_supervisor
+    isSupervisor: true
+    description: "Coordinates prescription review workflow"
+    promptFile: prompts/supervisor.md
+  - id: doctor
+    description: "Licensed physician, reviews clinical appropriateness"</pre>
+</section>
+
+<!-- ══ S5 ══ -->
+<section id="s5">
+<h2><span class="badge">05</span> Parallel Pattern</h2>
+
+<div class="definition">
+  <div class="definition-label">Definition</div>
+  <p>Fans a single input to N agents simultaneously, then funnels all results to a single aggregator agent that synthesizes a final answer.</p>
+</div>
+
+<div class="wwww">
+  <div class="wwww-card"><div class="wwww-label">What</div><p>N agents run concurrently with the same input. Aggregator receives all N outputs as a combined prompt.</p></div>
+  <div class="wwww-card"><div class="wwww-label">Why</div><p>Reduces wall-clock time for independent analyses; enables multi-perspective synthesis.</p></div>
+  <div class="wwww-card"><div class="wwww-label">When</div><p>Reviewing a document from legal, technical, and UX angles simultaneously.</p></div>
+  <div class="wwww-card"><div class="wwww-label">Where</div><p><code>pattern: parallel</code> + <code>parallel:</code> block.</p></div>
+</div>
+
+<pre data-lang="yaml">pattern: parallel
+parallel:
+  agents:     [legal_reviewer, technical_reviewer, ux_reviewer]
+  input:      "{{goal}}"
+  aggregator: synthesis_agent
+  output:     final_report</pre>
+</section>
+
+<!-- ══ S6 ══ -->
+<section id="s6">
+<h2><span class="badge">06</span> Hierarchical Pattern</h2>
+
+<div class="definition">
+  <div class="definition-label">Definition</div>
+  <p>Nests multiple supervisor layers — a root supervisor manages mid-level supervisors, each of which manages their own worker teams — forming a tree-shaped delegation structure.</p>
+</div>
+
+<pre data-lang="yaml">pattern: hierarchical
+hierarchical:
+  rootSupervisor: cto_agent
+  input: "{{goal}}"
+  maxTurns: 20
+
+agents:
+  - id: cto_agent
+    team: [backend_lead, frontend_lead]
+  - id: backend_lead
+    team: [api_engineer, db_engineer]
+  - id: frontend_lead
+    team: [react_engineer]</pre>
+</section>
+
+<!-- ══ S7 ══ -->
+<section id="s7">
+<h2><span class="badge">07</span> Plan-Execute Pattern</h2>
+
+<div class="definition">
+  <div class="definition-label">Definition</div>
+  <p>A planner agent emits a dynamic step list at runtime. That plan is schema-validated before execution, and each step references an agent from an explicit allow-list — preventing arbitrary execution through plan injection.</p>
+</div>
+
+<div class="admonition warning">
+  <div class="admonition-title">&#9888; Security note</div>
+  <p>The <code>executorAgents</code> allow-list is validated at schema ingress. A compromised planner cannot invoke agents outside this list.</p>
+</div>
+
+<pre data-lang="yaml">pattern: plan_execute
+planExecute:
+  planner:        orchestrator_agent
+  executorAgents: [web_searcher, summarizer, formatter]
+  input:          "{{goal}}"
+  maxSteps:       8</pre>
+</section>
+
+<!-- ══ S8 ══ -->
+<section id="s8">
+<h2><span class="badge">08</span> Context Engineering (Layer 2)</h2>
+
+<h3>Introduction</h3>
+<p>Once prompts are in place, the next engineering challenge is ensuring each agent has the right domain data at the right time — without hardcoding that data into prompts. Context Engineering externalizes assembly into typed, role-aware templates.</p>
+
+<div class="definition">
+  <div class="definition-label">Definition</div>
+  <p>The practice of designing, assembling, and injecting structured contextual information into a model's context window on a per-agent, per-role basis — using token budgets and priority chains to manage finite context space.</p>
+</div>
+
+<div class="wwww">
+  <div class="wwww-card"><div class="wwww-label">What</div><p>Role-specific YAML templates define which fields each agent role needs — type, PHI sensitivity, TTL, and cache promotion policy.</p></div>
+  <div class="wwww-card"><div class="wwww-label">Why</div><p>Avoids bloating every prompt with all possible context; ensures each agent receives only relevant data.</p></div>
+  <div class="wwww-card"><div class="wwww-label">When</div><p>Any multi-role system where agents have meaningfully different information needs.</p></div>
+  <div class="wwww-card"><div class="wwww-label">Where</div><p><code>contextManager:</code> in config + <code>templates/context/*.context.yml</code> + <code>contextRole:</code> on each agent.</p></div>
+</div>
+
+<h3>Context Template</h3>
+<pre data-lang="yaml"># templates/context/doctor.context.yml
+role: doctor
+fields:
+  patientName:
+    type: DomainContext
+    ttl: 600
+    requirement: REQUIRED
+    phi: true
+  currentMedications:
+    type: DomainContext
+    ttl: 300
+    requirement: OPTIONAL
+    phi: true
+    evict_on: [medication_update]
+  hospitalProtocol:
+    type: SystemContext
+    ttl: 3600
+    requirement: REQUIRED
+    phi: false
+    promote: always
+  requestTimestamp:
+    type: TemporalContext
+    ttl: 60</pre>
+
+<h3>Config (no TypeScript change)</h3>
+<pre data-lang="yaml">contextManager:
+  templateDir: templates/context
+  allowPhi: false              # PHI fields → [REDACTED-PHI]
+  tokenBudgetSplit:
+    system:       0.10
+    domain:       0.35
+    user:         0.20
+    conversation: 0.35
+
+agents:
+  - id: doctor_agent
+    contextRole: doctor        # loads doctor.context.yml automatically
+    promptFile:  prompts/doctor.md</pre>
+
+<h3>Supported Context Types</h3>
+<div class="md-table-wrap">
+<table>
+  <thead><tr><th>Type</th><th>Purpose</th><th>Auto-resolved</th></tr></thead>
+  <tbody>
+    <tr><td><code>UserContext</code></td><td>End-user profile, preferences</td><td>From <code>vars</code></td></tr>
+    <tr><td><code>DomainContext</code></td><td>Domain entity data (patient, order)</td><td>From <code>vars</code></td></tr>
+    <tr><td><code>SystemContext</code></td><td>Protocol, model identity, config</td><td>Fallback constants</td></tr>
+    <tr><td><code>ConversationContext</code></td><td>Prior turns, session state</td><td>From <code>vars</code></td></tr>
+    <tr><td><code>RetrievalContext</code></td><td>RAG-retrieved documents</td><td>Via retrieval store</td></tr>
+    <tr><td><code>TemporalContext</code></td><td>Timestamps, date</td><td>Auto (current time)</td></tr>
+    <tr><td><code>GraphContext</code></td><td>Knowledge graph traversal result</td><td>Via GraphStore path</td></tr>
+  </tbody>
+</table>
+</div>
+</section>
+
+<!-- ══ S9 ══ -->
+<section id="s9">
+<h2><span class="badge">09</span> Memory Management</h2>
+
+<div class="definition">
+  <div class="definition-label">Definition</div>
+  <p>A warm-tier LRU cache that stores frequently accessed context field values — keyed by <code>tenantId:entityId:fieldName</code> — so repeated agent calls retrieve cached values without re-fetching, while respecting PHI hard-blocks.</p>
+</div>
+
+<div class="wwww">
+  <div class="wwww-card"><div class="wwww-label">What</div><p>In-memory LRU store. Entity-scoped keys. Values have TTL and access-count thresholds for promotion.</p></div>
+  <div class="wwww-card"><div class="wwww-label">Why</div><p>Context assembly is called on every agent invocation. Without caching, the same patient record might be re-derived dozens of times per run.</p></div>
+  <div class="wwww-card"><div class="wwww-label">When</div><p>Multi-turn workflows where the same entity appears across many agent calls.</p></div>
+  <div class="wwww-card"><div class="wwww-label">Where</div><p><code>memoryManager:</code> block in config. Each field's <code>promote</code> policy controls warm-tier entry.</p></div>
+</div>
+
+<pre data-lang="yaml">memoryManager:
+  warmTierMaxEntries:   1000
+  defaultTtlSeconds:    300
+  accessCountThreshold: 3      # promote after 3 accesses (for promote: access_count)</pre>
+
+<p>PHI fields (<code>phi: true</code>) are <strong>never</strong> promoted to the warm tier, regardless of the promote policy.</p>
+</section>
+
+<!-- ══ S10 ══ -->
+<section id="s10">
+<h2><span class="badge">10</span> Dynamic Context Updates (ContextEventBus)</h2>
+
+<div class="definition">
+  <div class="definition-label">Definition</div>
+  <p>An event-driven cache invalidation bus that evicts warm-tier entries when domain events (room changes, discharges, medication updates) occur, ensuring agents always receive current data rather than stale cached values.</p>
+</div>
+
+<pre data-lang="yaml"># In doctor.context.yml
+fields:
+  assignedRoom:
+    type: DomainContext
+    ttl: 300
+    evict_on: [room_change, transfer, discharge]
+  treatingPhysician:
+    type: DomainContext
+    ttl: 600
+    evict_on: [doctor_reassignment]</pre>
+
+<pre data-lang="typescript">// Publish a domain event — no config change needed:
+eventBus.publish({
+  type:      "room_change",
+  tenantId:  "hospital-a",
+  patientId: "patient_jones",
+});
+// All warm-tier entries for assignedRoom evicted for patient_jones</pre>
+</section>
+
+<!-- ══ S11 ══ -->
+<section id="s11">
+<h2><span class="badge">11</span> PHI Gating &amp; Compliance</h2>
+
+<div class="definition">
+  <div class="definition-label">Definition</div>
+  <p>A per-field compliance gate preventing Protected Health Information from entering the warm-tier cache or being shown in injected context, replacing the value with <code>[REDACTED-PHI]</code> when <code>allowPhi: false</code>.</p>
+</div>
+
+<pre data-lang="yaml">contextManager:
+  allowPhi: false         # globally redact all phi:true fields
+
+# In doctor.context.yml:
+fields:
+  patientDOB:
+    type: DomainContext
+    phi: true             # never cached; redacted if allowPhi: false
+  diagnosisCode:
+    type: DomainContext
+    phi: true</pre>
+
+<div class="admonition warning">
+  <div class="admonition-title">&#9888; HIPAA compliance</div>
+  <p>Set <code>allowPhi: false</code> for all agents that do not have a clinical need for raw PHI. The framework enforces this at assembly time — there is no way for a <code>phi: true</code> field to reach the warm tier.</p>
+</div>
+</section>
+
+<!-- ══ S12 ══ -->
+<section id="s12">
+<h2><span class="badge">12</span> Graph Engineering (Layer 3)</h2>
+
+<h3>Introduction</h3>
+<p>Context Engineering solved <em>what data</em> each agent receives. Graph Engineering addresses <em>how agents relate to each other</em> and <em>how domain entities relate to each other</em> — both modeled as explicit graphs declared in config.</p>
+
+<div class="definition">
+  <div class="definition-label">Definition</div>
+  <p>The practice of expressing AI workflow topology (Jobs, Arrows, State) and domain entity relationships (Knowledge Graph) as explicit directed graphs in configuration — enabling the runtime to execute, traverse, and reason over structured relationships without code changes.</p>
+</div>
+
+<div class="wwww">
+  <div class="wwww-card"><div class="wwww-label">Agent Graph</div><p>Nodes are agents, edges are execution dependencies. The DAG executor runs topological BFS with concurrency.</p></div>
+  <div class="wwww-card"><div class="wwww-label">Knowledge Graph</div><p>Nodes are domain entities, edges are temporal semantic relationships. Traversal resolves current associations.</p></div>
+  <div class="wwww-card"><div class="wwww-label">Jobs</div><p>Each graph node is a unit of work — a specific agent invocation with defined input and output variables.</p></div>
+  <div class="wwww-card"><div class="wwww-label">Arrows + State</div><p>Edges carry type (sequential/parallel/conditional/human_gate) and optional <code>when</code> expression. State flows through shared <code>vars</code>.</p></div>
+</div>
+</section>
+
+<!-- ══ S13 ══ -->
+<section id="s13">
+<h2><span class="badge">13</span> Agent Graph Pattern (Jobs / Arrows / State)</h2>
+
+<div class="definition">
+  <div class="definition-label">Definition</div>
+  <p>A DAG-based execution pattern where nodes (Jobs) are agent invocations, edges (Arrows) are typed dependencies, and a shared mutable state object tracks outputs — enabling topological BFS execution with concurrent parallel batches.</p>
+</div>
+
+<div class="wwww">
+  <div class="wwww-card"><div class="wwww-label">Node types</div><p><code>worker</code>, <code>planner</code>, <code>validator</code>, <code>aggregator</code>, <code>human_gate</code></p></div>
+  <div class="wwww-card"><div class="wwww-label">Edge types</div><p><code>sequential</code>, <code>parallel</code>, <code>conditional</code> (with <code>when:</code> JS expr), <code>human_gate</code></p></div>
+  <div class="wwww-card"><div class="wwww-label">Execution</div><p>Topological BFS. Parallel batches run with <code>Promise.all</code>. Conditional skips cascade downstream.</p></div>
+  <div class="wwww-card"><div class="wwww-label">Budget</div><p><code>maxTurns</code> hard stops the graph. <code>stateSchema</code> warns on missing output keys post-execution.</p></div>
+</div>
+
+<pre data-lang="yaml">pattern: graph
+agentGraph:
+  input:    "{{goal}}"
+  output:   merged_report
+  maxTurns: 20
+  stateSchema:
+    plan:          string
+    findings_a:    string
+    findings_b:    string
+    merged_report: string
+
+  nodes:
+    - id: planner    type: planner    agentId: planner_agent   output: plan
+    - id: research_a type: worker     agentId: researcher_a    output: findings_a
+    - id: research_b type: worker     agentId: researcher_b    output: findings_b
+    - id: skeptic    type: validator  agentId: critic_agent    output: critique
+    - id: merger     type: aggregator agentId: synthesis_agent  output: merged_report
+    - id: approve    type: human_gate                          output: approval
+
+  edges:
+    - from: planner               to: [research_a, research_b]  type: parallel
+    - from: [research_a,research_b] to: skeptic                 type: sequential
+    - from: skeptic               to: merger                    type: conditional
+      when: "vars.critique !== 'REJECT'"
+    - from: merger                to: approve                   type: human_gate</pre>
+
+<p>No code changes. <code>runApp</code> dispatches to <code>runGraph</code> automatically when <code>pattern: graph</code> is set.</p>
+</section>
+
+<!-- ══ S14 ══ -->
+<section id="s14">
+<h2><span class="badge">14</span> Knowledge Graph (GraphStore)</h2>
+
+<div class="definition">
+  <div class="definition-label">Definition</div>
+  <p>A domain entity graph built on top of the ContextTree, where nodes represent typed domain objects and edges represent temporal semantic relationships. Graph traversal always resolves the current (open) edge for any association.</p>
+</div>
+
+<pre data-lang="yaml">graphStore:
+  nodes:
+    - id: patient_jones  type: Patient  data: {name: "Jones", dob: "1965-04-12"}
+    - id: room_101       type: Room     data: {number: "101",  ward: "General"}
+    - id: room_icu2      type: Room     data: {number: "ICU-2", ward: "ICU"}
+    - id: dr_chen        type: Doctor   data: {name: "Chen", specialty: "Cardiology"}
+
+  edges:
+    # Historical closed edge (validUntil set)
+    - from: patient_jones  label: assigned_to_room  to: room_101
+      validFrom: "2026-01-01"  validUntil: "2026-08-01"
+    # Current open edge (no validUntil = current)
+    - from: patient_jones  label: assigned_to_room  to: room_icu2
+      validFrom: "2026-08-01"
+    - from: patient_jones  label: assigned_to_doctor to: dr_chen</pre>
+
+<p>Traversing <code>"patient_jones→assigned_to_room"</code> returns <code>{number: "ICU-2", ward: "ICU"}</code> — only the open (current) edge is returned.</p>
+</section>
+
+<!-- ══ S15 ══ -->
+<section id="s15">
+<h2><span class="badge">15</span> GraphContext Field Type</h2>
+
+<div class="definition">
+  <div class="definition-label">Definition</div>
+  <p>A context field type that resolves its value by traversing the Knowledge Graph at assembly time, using a path expression template that interpolates runtime <code>vars</code> to determine the start node and path.</p>
+</div>
+
+<pre data-lang="yaml"># templates/context/doctor.context.yml
+fields:
+  currentPatientRoom:
+    type: GraphContext
+    traverse: "{{patientId}}→assigned_to_room"   # vars interpolated at runtime
+    ttl: 120
+    requirement: OPTIONAL
+  supervisingPhysician:
+    type: GraphContext
+    traverse: "{{patientId}}→assigned_to_doctor→managed_by"
+    ttl: 600</pre>
+
+<p>If <code>vars.patientId = "patient_jones"</code>, the framework traverses the graph and injects the result as a JSON string. No TypeScript changes required to add new traversals.</p>
+</section>
+
+<!-- ══ S16 ══ -->
+<section id="s16">
+<h2><span class="badge">16</span> RAG (Retrieval-Augmented Generation)</h2>
+
+<div class="definition">
+  <div class="definition-label">Definition</div>
+  <p>Augments an agent's prompt with the top-K most semantically relevant documents from a named retrieval store, keeping long-term knowledge outside the context window until needed.</p>
+</div>
+
+<pre data-lang="yaml">retrievalStores:
+  - id:   drug_database
+    type: local_files
+    dir:  knowledge/drugs         # relative to config directory
+
+agents:
+  - id: pharmacist
+    retrieval:
+      store: drug_database
+      topK:  5                    # 5 most relevant monographs injected</pre>
+</section>
+
+<!-- ══ S17 ══ -->
+<section id="s17">
+<h2><span class="badge">17</span> Tools &amp; ReAct Loop</h2>
+
+<div class="definition">
+  <div class="definition-label">Definition</div>
+  <p>The ReAct (Reason + Act) loop lets an agent iteratively call tools and observe results, cycling through Thought → Action → Observation until it produces a final answer or <code>maxToolTurns</code> is reached.</p>
+</div>
+
+<div class="admonition">
+  <div class="admonition-title">&#8505; Least-privilege design</div>
+  <p>A tool not listed in <code>agents[].tools</code> is never sent to that agent's model — there is no way for it to be invoked, regardless of what the model requests.</p>
+</div>
+
+<pre data-lang="yaml">tools:
+  - id:   drug_calc
+    type: calculator
+    description: "Compute drug dosages given weight and concentration"
+  - id:   formulary_api
+    type: http_get
+    description: "Check drug formulary status"
+    allowedDomains: [formulary.hospital.internal]
+
+agents:
+  - id: pharmacist
+    tools: [drug_calc, formulary_api]  # explicit opt-in
+    maxToolTurns: 4</pre>
+</section>
+
+<!-- ══ S18 ══ -->
+<section id="s18">
+<h2><span class="badge">18</span> Output Validation &amp; Self-Correction</h2>
+
+<div class="definition">
+  <div class="definition-label">Definition</div>
+  <p>Each agent can declare a validation policy that gates its output before returning upstream. On failure the agent retries up to <code>maxRetries</code> times with feedback injected into the next attempt.</p>
+</div>
+
+<pre data-lang="yaml">agents:
+  - id: doctor
+    validate:
+      type:       rule
+      rule:       "output.includes('APPROVED') || output.includes('REJECTED')"
+      maxRetries: 2
+      onFail:     warn      # log and continue after retries
+  - id: report_writer
+    validate:
+      type:     llm
+      criteria: "Report must include patient name, diagnosis, and treatment plan"
+      maxRetries: 1
+      onFail:   fail        # throw after retries exhausted</pre>
+</section>
+
+<!-- ══ S19 ══ -->
+<section id="s19">
+<h2><span class="badge">19</span> Human-in-the-Loop</h2>
+
+<div class="definition">
+  <div class="definition-label">Definition</div>
+  <p>A <code>human_gate</code> node type in the Agent Graph that suspends execution and prompts a human for input before proceeding. The response is stored as a named var available to downstream nodes.</p>
+</div>
+
+<pre data-lang="yaml">nodes:
+  - id: approve
+    type:   human_gate
+    input:  "Please review the merged report. Type APPROVED or REJECTED:"
+    output: human_approval
+
+edges:
+  - from: merger  to: approve  type: human_gate</pre>
+</section>
+
+<!-- ══ S20 ══ -->
+<section id="s20">
+<h2><span class="badge">20</span> Checkpoint &amp; Resume</h2>
+
+<div class="definition">
+  <div class="definition-label">Definition</div>
+  <p>The framework periodically snapshots <code>RunContext.vars</code> and token usage to a checkpoint file. A subsequent run can resume from that snapshot, skipping completed steps.</p>
+</div>
+
+<pre data-lang="bash"># Start with checkpointing:
+node dist/index.js configs/research.yaml \
+  --checkpoint run-state.json
+
+# Resume after interruption:
+node dist/index.js configs/research.yaml \
+  --resume    run-state.json \
+  --checkpoint run-state.json</pre>
+</section>
+
+<!-- ══ S21 ══ -->
+<section id="s21">
+<h2><span class="badge">21</span> Observability &amp; Tracing</h2>
+
+<div class="definition">
+  <div class="definition-label">Definition</div>
+  <p>A structured logging layer emitting step-level events — agent start, tool call, tool result, output, validation, token usage — to a caller-supplied log function, enabling any downstream observability backend.</p>
+</div>
+
+<pre data-lang="typescript">// Plug in your own logger — no config change needed:
+await runApp(config, baseDir, (msg) => {
+  myOtelSpan.addEvent(msg);
+  console.log(`[${new Date().toISOString()}] ${msg}`);
+});</pre>
+</section>
+
+<!-- ══ S22 ══ -->
+<section id="s22">
+<h2><span class="badge">22</span> Budget Management &amp; Safety Caps</h2>
+
+<div class="definition">
+  <div class="definition-label">Definition</div>
+  <p>Every looping construct carries both a turn budget (<code>maxTurns</code>) and an optional token budget (<code>tokenBudget</code>), ensuring no runaway execution can exhaust API quota or incur unbounded cost.</p>
+</div>
+
+<pre data-lang="yaml">supervisorConfig:
+  maxTurns:    10
+  tokenBudget: 80000
+
+workflow:
+  loop:
+    until:         "vars.review.includes('APPROVED')"
+    maxIterations: 5
+    tokenBudget:   30000
+    onExhaustion:  fail        # throw instead of silently continuing
+    statusVar:     loop_outcome # "approved" or "ITERATIONS_EXCEEDED"
+
+agents:
+  - id: pharmacist
+    maxToolTurns: 4            # per-agent ReAct cap, independent of pattern cap</pre>
+</section>
+
+<!-- ══ S23 ══ -->
+<section id="s23">
+<h2><span class="badge">23</span> Typed Handoffs</h2>
+
+<div class="definition">
+  <div class="definition-label">Definition</div>
+  <p>Every data exchange between agents flows through <code>RunContext.vars</code> as named strings. In Plan-Execute, the planner's output is Zod-validated against the step schema and checked against the <code>executorAgents</code> allow-list before any step executes.</p>
+</div>
+
+<div class="admonition warning">
+  <div class="admonition-title">&#9888; Prompt injection defense</div>
+  <p>Even if a planner LLM outputs a step referencing <code>system_shell_agent</code>, schema validation rejects it if that id is not in <code>executorAgents</code>. The allow-list is declared at deploy time, not evaluated at runtime.</p>
+</div>
+
+<pre data-lang="yaml">planExecute:
+  planner:        orchestrator
+  # Only these IDs may appear in the planner's emitted step list:
+  executorAgents: [web_searcher, summarizer, formatter]
+  maxSteps: 8</pre>
+</section>
+
+</main>
+
+<!-- RIGHT TOC -->
+<aside class="toc">
+  <div class="toc-title">On this page</div>
+  <a href="#s1">Config-Driven Philosophy</a>
+  <a href="#s2">Prompt Engineering</a>
+  <a href="#s3">Sequential Pattern</a>
+  <a href="#s4">Supervisor Pattern</a>
+  <a href="#s5">Parallel Pattern</a>
+  <a href="#s6">Hierarchical Pattern</a>
+  <a href="#s7">Plan-Execute</a>
+  <a href="#s8">Context Engineering</a>
+  <a href="#s9">Memory Management</a>
+  <a href="#s10">Dynamic Context Events</a>
+  <a href="#s11">PHI Gating</a>
+  <a href="#s12">Graph Engineering</a>
+  <a href="#s13">Agent Graph Pattern</a>
+  <a href="#s14">Knowledge Graph</a>
+  <a href="#s15">GraphContext Fields</a>
+  <a href="#s16">RAG</a>
+  <a href="#s17">Tools &amp; ReAct</a>
+  <a href="#s18">Output Validation</a>
+  <a href="#s19">Human-in-the-Loop</a>
+  <a href="#s20">Checkpoint &amp; Resume</a>
+  <a href="#s21">Observability</a>
+  <a href="#s22">Budget Management</a>
+  <a href="#s23">Typed Handoffs</a>
+</aside>
+
+</div>
+
+<footer>
+  <span>Multiagent Framework — White Paper · 2026</span>
+  <a href="https://github.com/praneethchandra/multiagent-framework">View on GitHub &#8599;</a>
+</footer>
+
+<script>
+function toggleTheme() {
+  const root = document.documentElement;
+  const cur = root.getAttribute('data-theme');
+  const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+  if (!cur) root.setAttribute('data-theme', prefersDark ? 'light' : 'dark');
+  else if (cur === 'dark') root.setAttribute('data-theme', 'light');
+  else root.removeAttribute('data-theme');
+}
+
+// Scrollspy for both sidebars
+const navLinks = document.querySelectorAll('nav.sidenav a');
+const tocLinks = document.querySelectorAll('aside.toc a');
+const sections = [...document.querySelectorAll('section[id]')];
+
+const observer = new IntersectionObserver((entries) => {
+  entries.forEach(e => {
+    if (!e.isIntersecting) return;
+    const id = '#' + e.target.id;
+    [...navLinks, ...tocLinks].forEach(l => {
+      if (l.getAttribute('href') === id) l.classList.add('active');
+      else l.classList.remove('active');
+    });
+  });
+}, { rootMargin: `-${48}px 0px -60% 0px` });
+
+sections.forEach(s => observer.observe(s));
+</script>
