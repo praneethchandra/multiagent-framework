@@ -5,6 +5,8 @@ import { buildRetrievalRegistry } from "./retrieval.js";
 import { ContextManager } from "./context/contextManager.js";
 import { MemoryManager } from "./context/memoryManager.js";
 import { ContextTree } from "./context/contextTree.js";
+import { GraphStore } from "./context/graphStore.js";
+import { runGraph } from "./patterns/graph.js";
 import { runSequential, SequentialResumeState } from "./patterns/sequential.js";
 import { runSupervisor, SupervisorResumeState } from "./patterns/supervisor.js";
 import { runParallel } from "./patterns/parallel.js";
@@ -28,9 +30,10 @@ export async function runApp(
 
   // ContextManager + MemoryManager are opt-in: only constructed when the config
   // declares them. Absent blocks = zero behavior change for existing configs.
-  const memMgr = config.memoryManager ? new MemoryManager(config.memoryManager) : undefined;
-  const ctxMgr = config.contextManager
-    ? new ContextManager(config.contextManager, baseDir, memMgr)
+  const memMgr    = config.memoryManager ? new MemoryManager(config.memoryManager) : undefined;
+  const graphStore = config.graphStore   ? new GraphStore(config.graphStore)        : undefined;
+  const ctxMgr    = config.contextManager
+    ? new ContextManager(config.contextManager, baseDir, memMgr, graphStore)
     : undefined;
   const contextTree = ctxMgr ? new ContextTree() : undefined;
 
@@ -74,6 +77,9 @@ export async function runApp(
       break;
     case "plan_execute":
       await runPlanExecute(config.planExecute!, agents, ctx, log);
+      break;
+    case "graph":
+      await runGraph(config.agentGraph!, agents, ctx, log);
       break;
   }
 

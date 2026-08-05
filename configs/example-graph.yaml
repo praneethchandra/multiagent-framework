@@ -1,0 +1,160 @@
+name: research-graph-workflow
+pattern: graph
+
+llm:
+  model: claude-sonnet-4-6
+  apiKeyEnv: ANTHROPIC_API_KEY
+  maxTokens: 2048
+
+goal: "Research the impact of large language models on software engineering productivity, covering both benefits and risks."
+
+# ── Agent Graph (how work moves) ──────────────────────────────────────────────
+# Jobs: planner → [researcher_a, researcher_b] → skeptic → merger → human gate
+# Arrows: parallel fan-out, conditional validation gate, sequential aggregation
+# State: plan, res_a, res_b, validation, final_report, approval
+
+agentGraph:
+  input: "{{goal}}"
+  output: final_report
+  maxTurns: 20
+
+  nodes:
+    - id: plan
+      agentId: planner
+      type: planner
+      input: "{{goal}}"
+      output: plan
+
+    - id: research_a
+      agentId: researcher_a
+      type: worker
+      input: "Research plan: {{plan}}\n\nFocus on TOPIC_A from the plan above."
+      output: res_a
+
+    - id: research_b
+      agentId: researcher_b
+      type: worker
+      input: "Research plan: {{plan}}\n\nFocus on TOPIC_B from the plan above."
+      output: res_b
+
+    - id: validate
+      agentId: skeptic
+      type: validator
+      input: |
+        Research stream A:
+        {{res_a}}
+
+        Research stream B:
+        {{res_b}}
+
+        Review the above for gaps, contradictions, or unsupported claims.
+      output: validation
+
+    - id: merge
+      agentId: merger
+      type: aggregator
+      input: |
+        Research A: {{res_a}}
+        Research B: {{res_b}}
+        Validation: {{validation}}
+
+        Synthesize all of the above into a final report.
+      output: final_report
+
+    # Human gate: pauses for human approval before the report is considered done.
+    # Remove this node (and its edge) to run fully autonomously.
+    - id: approve
+      type: human_gate
+      input: |
+        === DRAFT REPORT ===
+        {{final_report}}
+        === END REPORT ===
+
+        Do you approve this report? (yes / request changes):
+      output: approval
+
+  edges:
+    # Planner fans out to both researchers in parallel
+    - from: plan
+      to: [research_a, research_b]
+      type: parallel
+
+    # Both researchers must finish before skeptic runs
+    - from: [research_a, research_b]
+      to: validate
+      type: sequential
+
+    # Merger only runs if skeptic approved
+    - from: validate
+      to: merge
+      type: conditional
+      when: "vars.validation && vars.validation.startsWith('APPROVED')"
+
+    # Human gate runs after merger — explicit human review point
+    - from: merge
+      to: approve
+      type: human_gate
+
+  stateSchema:
+    plan:         string   # research plan from planner
+    res_a:        string   # findings from researcher A
+    res_b:        string   # findings from researcher B
+    validation:   string   # skeptic's verdict (APPROVED: ... or NEEDS_REVISION: ...)
+    final_report: string   # merged synthesis
+    approval:     string   # human gate answer
+
+# ── Knowledge Graph (how information connects) ────────────────────────────────
+# Optional: pre-seed entity relationships for GraphContext fields in context templates.
+# Agents with contextRole can traverse this graph to enrich their context.
+graphStore:
+  nodes:
+    - id: topic_llm_productivity
+      type: ResearchTopic
+      data:
+        title: LLM Impact on Software Engineering
+        domain: AI/Software Engineering
+        year: 2025
+    - id: source_github_copilot_study
+      type: Source
+      data:
+        title: GitHub Copilot Productivity Study
+        credibility: high
+        year: 2023
+    - id: source_acm_survey
+      type: Source
+      data:
+        title: ACM Survey on AI-Assisted Development
+        credibility: high
+        year: 2024
+  edges:
+    - from: topic_llm_productivity
+      to: source_github_copilot_study
+      label: has_source
+    - from: topic_llm_productivity
+      to: source_acm_survey
+      label: has_source
+
+agents:
+  - id: planner
+    description: "Breaks the research goal into two focused subtopics"
+    promptFile: ../prompts/research/planner.md
+
+  - id: researcher_a
+    description: "Researches the first subtopic in depth"
+    promptFile: ../prompts/research/researcher.md
+
+  - id: researcher_b
+    description: "Researches the second subtopic in depth"
+    promptFile: ../prompts/research/researcher.md
+
+  - id: skeptic
+    description: "Reviews research for gaps and contradictions, outputs APPROVED or NEEDS_REVISION"
+    promptFile: ../prompts/research/skeptic.md
+    validate:
+      type: rule
+      rule: "output.startsWith('APPROVED') || output.startsWith('NEEDS_REVISION')"
+      onFail: warn
+
+  - id: merger
+    description: "Synthesizes both research streams into a final integrated report"
+    promptFile: ../prompts/research/merger.md
