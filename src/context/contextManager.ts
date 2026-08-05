@@ -7,6 +7,7 @@ import type { RunContext } from "../types.js";
 import type { ContextAssembly, ContextType } from "./contextTypes.js";
 import type { ContextTree } from "./contextTree.js";
 import type { MemoryManager } from "./memoryManager.js";
+import type { GraphStore } from "./graphStore.js";
 
 // Derived temporal fields auto-populated without needing a vars entry.
 const TEMPORAL_AUTO: Record<string, () => string> = {
@@ -28,12 +29,14 @@ export class ContextManager {
   private readonly cfg: ContextManagerConfig;
   private readonly baseDir: string;
   private readonly mm?: MemoryManager;
+  private readonly gs?: GraphStore;
   private readonly templateCache = new Map<string, ContextTemplate>();
 
-  constructor(cfg: ContextManagerConfigInput, baseDir: string, mm?: MemoryManager) {
+  constructor(cfg: ContextManagerConfigInput, baseDir: string, mm?: MemoryManager, gs?: GraphStore) {
     this.cfg = ContextManagerConfigSchema.parse(cfg);
     this.baseDir = baseDir;
     this.mm = mm;
+    this.gs = gs;
   }
 
   loadTemplate(role: string): ContextTemplate {
@@ -163,6 +166,24 @@ export class ContextManager {
     // 4. Auto-derived: SystemContext
     if (meta.type === "SystemContext" && fieldName in SYSTEM_AUTO) {
       return runCtx.vars[fieldName] ?? SYSTEM_AUTO[fieldName];
+    }
+
+    // 5. GraphContext: traverse knowledge graph via the field's `traverse` path.
+    //    Path template is rendered first so it can reference vars (e.g. "{{patientId}}→assigned_to_room").
+    if (meta.type === "GraphContext" && meta.traverse && this.gs) {
+      const rawPath  = meta.traverse;
+      const rendered = rawPath.replace(/\{\{\s*([\w.]+)\s*\}\}/g, (_m, k: string) => runCtx.vars[k] ?? "");
+      const sep      = rendered.indexOf("→");
+      if (sep > 0) {
+        const startId = rendered.slice(0, sep);
+        const path    = rendered.slice(sep + "→".length);
+        const data    = this.gs.traverse(startId, path);
+        if (data !== undefined) return JSON.stringify(data);
+      } else {
+        // Single node lookup (no traversal)
+        const data = this.gs.traverse(rendered, "");
+        if (data !== undefined) return JSON.stringify(data);
+      }
     }
 
     return undefined;

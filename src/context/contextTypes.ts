@@ -7,19 +7,13 @@ export type ContextType =
   | "SystemContext"
   | "ConversationContext"
   | "RetrievalContext"
-  | "TemporalContext";
+  | "TemporalContext"
+  | "GraphContext";   // resolved via Knowledge Graph traversal (graphStore:)
 
-export type NodeType = "Hospital" | "Doctor" | "Patient" | "Supervisor" | "Room";
+export type NodeType = string; // open: Hospital | Doctor | Patient | Room | any domain node
 
-export type EdgeLabel =
-  | "has_doctor"
-  | "has_patient"
-  | "has_supervisor"
-  | "has_room"
-  | "assigned_to_doctor"
-  | "assigned_to_room"
-  | "managed_by"
-  | "dual_role";
+// Open string type: hospital edges plus any domain-specific labels from graphStore:.
+export type EdgeLabel = string;
 
 export interface TemporalEdge {
   label: EdgeLabel;

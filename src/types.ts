@@ -32,7 +32,8 @@ export const ToolConfigSchema = z.object({
 // ── ContextManager + MemoryManager schemas ────────────────────────────────
 
 export const ContextFieldMetaSchema = z.object({
-  type: z.enum(["UserContext", "DomainContext", "SystemContext", "ConversationContext", "RetrievalContext", "TemporalContext"]),
+  type: z.enum(["UserContext", "DomainContext", "SystemContext", "ConversationContext", "RetrievalContext", "TemporalContext", "GraphContext"]),
+  traverse: z.string().optional(), // GraphContext only: "nodeId→edgeLabel" path expression
   ttl: z.number().default(300),
   requirement: z.enum(["REQUIRED", "OPTIONAL", "GRACEFUL_FALLBACK"]).default("OPTIONAL"),
   phi: z.boolean().default(false),
@@ -72,6 +73,63 @@ export type ContextTemplate         = z.infer<typeof ContextTemplateSchema>;
 export type ContextManagerConfig    = z.infer<typeof ContextManagerConfigSchema>;
 export type ContextManagerConfigInput = z.input<typeof ContextManagerConfigSchema>;
 export type MemoryManagerConfig     = z.infer<typeof MemoryManagerConfigSchema>;
+
+// ── Graph Engineering ─────────────────────────────────────────────────────────
+
+// Agent Graph: how work moves between agents (topology of jobs and arrows).
+export const AgentNodeTypeEnum = z.enum(["planner", "worker", "validator", "aggregator", "human_gate"]);
+export const AgentEdgeTypeEnum = z.enum(["sequential", "parallel", "conditional", "human_gate"]);
+
+export const AgentGraphNodeSchema = z.object({
+  id:      z.string(),
+  agentId: z.string().optional(),        // omit for human_gate nodes
+  type:    AgentNodeTypeEnum.default("worker"),
+  input:   z.string().default("{{goal}}"),
+  output:  z.string(),
+});
+
+export const AgentGraphEdgeSchema = z.object({
+  from: z.union([z.string(), z.array(z.string())]),
+  to:   z.union([z.string(), z.array(z.string())]),
+  type: AgentEdgeTypeEnum.default("sequential"),
+  when: z.string().optional(),           // JS boolean expr; conditional edges only
+});
+
+export const AgentGraphConfigSchema = z.object({
+  input:       z.string().default("{{goal}}"),
+  output:      z.string().default("final_output"),
+  maxTurns:    z.number().default(20),
+  tokenBudget: z.number().optional(),
+  nodes:       z.array(AgentGraphNodeSchema),
+  edges:       z.array(AgentGraphEdgeSchema),
+  stateSchema: z.record(z.string(), z.string()).optional(), // key → type hint; warns if missing after run
+});
+
+// Knowledge Graph (graphStore): how information/entities connect.
+// Separate from Agent Graph — this is data topology, not work topology.
+export const GraphStoreNodeSchema = z.object({
+  id:   z.string(),
+  type: z.string(),
+  data: z.record(z.string(), z.unknown()).default({}),
+});
+
+export const GraphStoreEdgeSchema = z.object({
+  from:       z.string(),
+  to:         z.string(),
+  label:      z.string(),
+  validFrom:  z.string().optional(),  // ISO date string
+  validUntil: z.string().optional(),  // ISO date string
+});
+
+export const GraphStoreConfigSchema = z.object({
+  nodes: z.array(GraphStoreNodeSchema).default([]),
+  edges: z.array(GraphStoreEdgeSchema).default([]),
+});
+
+export type AgentGraphConfig  = z.infer<typeof AgentGraphConfigSchema>;
+export type AgentGraphNode    = z.infer<typeof AgentGraphNodeSchema>;
+export type AgentGraphEdge    = z.infer<typeof AgentGraphEdgeSchema>;
+export type GraphStoreConfig  = z.infer<typeof GraphStoreConfigSchema>;
 
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -204,6 +262,7 @@ export const PatternEnum = z.enum([
   "parallel",
   "hierarchical",
   "plan_execute",
+  "graph",
 ]);
 
 export const AppConfigSchema = z.object({
@@ -221,6 +280,8 @@ export const AppConfigSchema = z.object({
   planExecute: PlanExecuteConfigSchema.optional(), // used by "plan_execute"
   contextManager: ContextManagerConfigSchema.optional(), // opt-in context injection
   memoryManager:  MemoryManagerConfigSchema.optional(),  // opt-in warm-tier cache
+  agentGraph:     AgentGraphConfigSchema.optional(),     // used by "graph" pattern
+  graphStore:     GraphStoreConfigSchema.optional(),     // opt-in knowledge graph
   vars: z.record(z.string(), z.string()).optional(),     // pre-seed RunContext.vars
 });
 
@@ -236,7 +297,7 @@ export type ParallelConfig = z.infer<typeof ParallelConfigSchema>;
 export type SupervisorConfig = z.infer<typeof SupervisorConfigSchema>;
 export type HierarchicalConfig = z.infer<typeof HierarchicalConfigSchema>;
 export type PlanExecuteConfig = z.infer<typeof PlanExecuteConfigSchema>;
-export type AppConfig = z.infer<typeof AppConfigSchema>;
+export type AppConfig         = z.infer<typeof AppConfigSchema>;
 
 export interface TokenUsage {
   input: number;
