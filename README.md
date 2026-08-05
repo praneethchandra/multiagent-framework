@@ -556,9 +556,212 @@ planExecute:
 [...]}}` (see `prompts/planner.md`); `executorAgents` is the allow-list the
 generated plan's `agent` fields are checked against.
 
+## 19. Context injection and the ContextManager
+
+Agents often need structured, role-specific context beyond the raw task input — the current user's ID, domain rules, regulatory constraints, or a patient's room number. Without a ContextManager, you'd either bake all of this into the prompt string or rely on the agent to reason about whatever RAG returns.
+
+Add `contextManager:` to your config and each agent automatically gets a structured context block prepended to its message before the model call, assembled from typed fields declared in a YAML template:
+
+```yaml
+contextManager:
+  templateDir: ../templates/context         # directory of *.context.yml files
+  promotionRulesFile: ../templates/promotion/promotion.rules.yml  # optional global promotion rules
+  allowPhi: false                            # redact phi:true fields (HIPAA etc); default false
+```
+
+Point each agent at its role template with `contextRole`:
+
+```yaml
+agents:
+  - id: doctor_agent
+    contextRole: doctor      # loads templates/context/doctor.context.yml
+    ...
+  - id: supervisor_agent
+    contextRole: supervisor  # loads templates/context/supervisor.context.yml
+    ...
+```
+
+### Context templates (`templates/context/<role>.context.yml`)
+
+Each template declares the fields the agent's context will include, how long they're cached, whether they're PHI, and what happens if they're missing:
+
+```yaml
+role: doctor
+fields:
+  doctorId:
+    type: UserContext        # one of: UserContext, DomainContext, SystemContext,
+    ttl: 3600                #          ConversationContext, RetrievalContext, TemporalContext
+    requirement: REQUIRED    # REQUIRED (escalate+warn if missing), OPTIONAL, GRACEFUL_FALLBACK (use stale+warn)
+    phi: false               # if true: never written to warm cache; redacted to [REDACTED-PHI] when allowPhi:false
+    promote: always          # always | access_count | explicit
+    promote_ttl: 7200
+
+  currentShift:
+    type: TemporalContext
+    ttl: 1800
+    requirement: OPTIONAL
+    phi: false
+    promote: always
+
+  drugRules:
+    type: DomainContext
+    ttl: 86400               # cached 24h — domain rules rarely change
+    requirement: REQUIRED
+    phi: false
+    promote: always
+    evict_on: [formulary_update]  # event names that should clear this field from cache
+
+  patientHistory:
+    type: RetrievalContext
+    ttl: 1800
+    requirement: GRACEFUL_FALLBACK
+    phi: true                # never cached; redacted unless allowPhi:true
+    promote: explicit        # only promoted on explicit promote() call, never automatically
+    evict_on: [discharge]
+```
+
+**Field types and where values come from:**
+
+| Type | Source |
+|---|---|
+| `UserContext` | `RunContext.vars[fieldName]` (seeded via `vars:` block or agent outputs) |
+| `DomainContext` | Same as UserContext; semantically marks domain-level rules/config |
+| `SystemContext` | Auto-derived from agent config (`modelId`, `toolList`); falls back to vars |
+| `TemporalContext` | Auto-derived from `Date.now()` (`requestTimestamp`, `currentDate`); falls back to vars |
+| `ConversationContext` | `RunContext.vars[fieldName]` — typically a prior agent's output variable |
+| `RetrievalContext` | `RunContext.vars[fieldName]` — typically text retrieved via RAG |
+
+**Requirement behaviour when a field is missing:**
+
+| `requirement` | Behaviour |
+|---|---|
+| `REQUIRED` | Logs an `ESCALATE` warning, continues with empty — use when missing is always a bug |
+| `OPTIONAL` | Silent empty — use for nice-to-have enrichment |
+| `GRACEFUL_FALLBACK` | Uses last known stale value if any, otherwise empty + warning |
+
+### Pre-seeding context values with `vars:`
+
+The `vars:` top-level block is the primary way to populate context fields before any agent runs:
+
+```yaml
+vars:
+  tenantId:       "tenant1"
+  doctorId:       "dr_smith"
+  patientId:      "p_jones"
+  drugRules:      "See formulary — penicillin contraindicated for this patient"
+  regulatoryRules: "R-1: complete prescription. R-2: allergy check mandatory."
+```
+
+Values declared in `vars:` are merged into `RunContext.vars` at startup and are available immediately to every agent's context assembly. Individual agent outputs (stored in `vars` via step `output:` declarations) layer on top as the run progresses.
+
+### What the agent sees
+
+The assembled context is prepended to the agent's message inside a structured block:
+
+```
+=== CONTEXT ===
+[UserContext]
+doctorId: dr_smith
+currentShift: morning
+
+[DomainContext]
+drugRules: Amoxicillin is contraindicated for patients with penicillin allergy
+
+[TemporalContext]
+requestTimestamp: 2025-01-15T09:32:00.000Z
+currentDate: 2025-01-15
+=== END CONTEXT ===
+
+<the actual task message follows here>
+```
+
+### Dynamic context updates with `ContextEventBus`
+
+Context values can go stale mid-run — a patient can move rooms, be discharged, or transferred. The `ContextEventBus` lets you push domain events that evict stale warm-tier entries and update the `ContextTree`, so the next `assemble()` call picks up the new value instead of returning stale data:
+
+```typescript
+import { ContextEventBus } from "./src/context/contextEventBus.js";
+
+bus.emit({
+  type:      "room_change",
+  tenantId:  "tenant1",
+  patientId: "p_jones",
+  payload:   { newRoom: "ICU", newUnit: "critical_care", assignedNurse: "n_patel" },
+});
+```
+
+Built-in event types: `room_change`, `admission`, `discharge`, `transfer`, `diagnosis_update`, `formulary_update`. Fields listed in a template's `evict_on` array are evicted from the warm tier when a matching event fires; the tree's `assigned_to_room` edge is updated automatically for `room_change`, `transfer`, `admission`, and `discharge`.
+
+---
+
+## 20. Warm-tier memory caching (`MemoryManager`)
+
+The `MemoryManager` sits between `RunContext.vars` (hot tier — always available but not persisted across runs) and RAG/structured stores (cold tier — file or DB lookup). It's an LRU in-process cache with per-field TTL, scoped by `tenantId:entityId:fieldName` so field evictions from `ContextEventBus` events hit the right entity without needing agent-to-entity mappings.
+
+```yaml
+memoryManager:
+  warmTierMaxEntries:   1000    # LRU evicts oldest when full; default 1000
+  defaultTtlSeconds:    300     # fallback TTL if a field's template doesn't specify; default 300
+  accessCountThreshold: 3       # for promote:access_count fields, how many gets trigger a TTL extension
+```
+
+**PHI hard-block:** fields declared `phi: true` in a context template are **never written to the warm tier**, regardless of `promote` setting. They're re-resolved from `vars` (or left empty) on every `assemble()` call.
+
+**Promotion triggers** (set per-field in the context template):
+
+| `promote` | When the TTL is extended |
+|---|---|
+| `always` | On every `set()` — field is effectively kept alive as long as it's being used |
+| `access_count` | After `accessCountThreshold` cache hits (field earned its keep) |
+| `explicit` | Only when `mm.promote(key)` is called directly (use for PHI-adjacent fields you want fine-grained control over) |
+
+### Token budget
+
+The assembled context respects a split budget across the four main context categories, so no single section can crowd out the conversation history. Defaults (as a fraction of `llm.maxTokens`):
+
+```yaml
+contextManager:
+  tokenBudgetSplit:
+    system:       0.10    # SystemContext sections
+    user:         0.20    # UserContext + TemporalContext
+    domain:       0.30    # DomainContext
+    conversation: 0.40    # ConversationContext + RetrievalContext
+```
+
+### Priority chain
+
+When multiple fields resolve a value from different sources, the priority chain decides which wins. Default order (highest to lowest):
+
+```yaml
+contextManager:
+  priorityChain: [Regulatory, System, Domain, User, Conversation]
+```
+
+Collisions (the same field name appearing in multiple context types) are resolved by this chain — a `DomainContext` value beats a `UserContext` value for the same key.
+
+---
+
 ## Adding your own multi-agent system
+
+### Without ContextManager (existing workflow, unchanged)
 
 1. Copy one of the `configs/example-*.yaml` files that matches your pattern.
 2. Write prompt files for your agents under `prompts/` (or inline them).
 3. Wire up `workflow` / `supervisorConfig` / `parallel` / `hierarchical`.
 4. `npm run run -- configs/your-config.yaml`
+
+### With ContextManager (domain-specific context, zero TypeScript changes)
+
+1. Copy `configs/hospital-prescription.yaml` as your starting point.
+2. Create `templates/context/<role>.context.yml` for each agent role — declare the fields, their types, TTLs, PHI flags, and requirement levels.
+3. Optionally create `templates/promotion/promotion.rules.yml` for global promotion overrides.
+4. Add a `knowledge/<domain>/` directory with plain-text files if you need RAG grounding.
+5. Add prompt files under `prompts/<domain>/`.
+6. In your config YAML:
+   - Add `contextManager:` with `templateDir` pointing at your templates.
+   - Add `memoryManager:` if you want the warm-tier cache.
+   - Add a `vars:` block to pre-seed entity IDs and domain data.
+   - Set `contextRole: <role>` on each agent.
+7. `npm run run -- configs/your-config.yaml`
+
+No TypeScript changes required. The entire context injection pipeline — field resolution, warm-tier caching, PHI gating, token budgeting, and event-driven cache invalidation — is driven from YAML.
