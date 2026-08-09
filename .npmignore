@@ -1,0 +1,30 @@
+# Source — consumers get compiled dist/ only
+src/
+tsconfig.json
+
+# Tests
+src/__tests__/
+vitest.config.*
+coverage/
+results/
+
+# Dev tooling
+postman/
+scripts/
+.claude/
+.agents/
+skills-lock.json
+
+# Config examples (not part of the package API)
+configs/
+templates/
+prompts/
+knowledge/
+
+# Git
+.git/
+.gitignore
+
+# Env
+.env
+.env.*
