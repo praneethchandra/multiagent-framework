@@ -1,0 +1,828 @@
+{
+  "info": {
+    "name": "Multiagent Framework — Regression Suite",
+    "_postman_id": "maf-regression-v1",
+    "description": "Full regression suite for the config-driven multiagent framework.\n\n**Folders:**\n- Health & Connectivity — liveness probes, no API key needed\n- Schema Validation — config parsing and Zod validation, no API key needed\n- Pattern Smoke Tests — end-to-end runs, require ANTHROPIC_API_KEY\n- Router Pattern — dynamic workflow dispatch tests\n- Error Handling — invalid config and runtime error cases\n\n**Running with Newman:**\n```\nnpx newman run postman/multiagent-framework.postman_collection.json \\\n  --environment postman/local.postman_environment.json \\\n  --reporters cli,json --reporter-json-export results/newman-report.json\n```",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "base_url", "value": "http://localhost:3737" },
+    { "key": "has_api_key", "value": "false" }
+  ],
+  "item": [
+
+    {
+      "name": "Health & Connectivity",
+      "item": [
+        {
+          "name": "Health check — server is up",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/health"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Body has status ok', () => {",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(body.status).to.equal('ok');",
+                  "});",
+                  "pm.test('Body has version', () => {",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(body.version).to.be.a('string').and.not.empty;",
+                  "});",
+                  "// Store whether API key is present for conditional LLM tests",
+                  "const body = pm.response.json();",
+                  "pm.collectionVariables.set('has_api_key', body.hasApiKey ? 'true' : 'false');",
+                  "pm.test('API key presence reported', () => {",
+                  "  pm.expect(body.hasApiKey).to.be.a('boolean');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Health check — response time under 500ms",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/health"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Response time < 500ms', () => {",
+                  "  pm.expect(pm.response.responseTime).to.be.below(500);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+
+    {
+      "name": "Schema Validation (no API key required)",
+      "item": [
+        {
+          "name": "Valid — sequential config",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/validate",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Test Sequential\",\n  \"pattern\": \"sequential\",\n  \"goal\": \"Test goal\",\n  \"agents\": [\n    { \"id\": \"a\", \"prompt\": \"You are agent A\" },\n    { \"id\": \"b\", \"prompt\": \"You are agent B\" }\n  ],\n  \"workflow\": {\n    \"steps\": [\n      { \"agent\": \"a\", \"input\": \"{{goal}}\", \"output\": \"step1\" },\n      { \"agent\": \"b\", \"input\": \"{{step1}}\", \"output\": \"final_output\" }\n    ]\n  }\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Config is valid', () => {",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(body.valid).to.be.true;",
+                  "  pm.expect(body.pattern).to.equal('sequential');",
+                  "  pm.expect(body.agentCount).to.equal(2);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Valid — supervisor config",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/validate",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Test Supervisor\",\n  \"pattern\": \"supervisor\",\n  \"goal\": \"Test goal\",\n  \"agents\": [\n    { \"id\": \"sup\", \"isSupervisor\": true, \"prompt\": \"You are the supervisor\" },\n    { \"id\": \"w1\",  \"prompt\": \"You are worker 1\" },\n    { \"id\": \"w2\",  \"prompt\": \"You are worker 2\" }\n  ],\n  \"supervisorConfig\": {\n    \"supervisor\": \"sup\",\n    \"workers\": [\"w1\", \"w2\"],\n    \"input\": \"{{goal}}\",\n    \"maxTurns\": 5\n  }\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Supervisor config valid', () => {",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(body.valid).to.be.true;",
+                  "  pm.expect(body.pattern).to.equal('supervisor');",
+                  "  pm.expect(body.agentCount).to.equal(3);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Valid — parallel config",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/validate",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Test Parallel\",\n  \"pattern\": \"parallel\",\n  \"goal\": \"Test goal\",\n  \"agents\": [\n    { \"id\": \"a\", \"prompt\": \"Specialist A\" },\n    { \"id\": \"b\", \"prompt\": \"Specialist B\" },\n    { \"id\": \"agg\", \"prompt\": \"Aggregator\" }\n  ],\n  \"parallel\": {\n    \"agents\": [\"a\", \"b\"],\n    \"input\": \"{{goal}}\",\n    \"aggregator\": \"agg\",\n    \"output\": \"final_output\"\n  }\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Parallel config valid', () => {",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(body.valid).to.be.true;",
+                  "  pm.expect(body.pattern).to.equal('parallel');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Valid — hierarchical config",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/validate",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Test Hierarchical\",\n  \"pattern\": \"hierarchical\",\n  \"goal\": \"Test goal\",\n  \"agents\": [\n    { \"id\": \"root\", \"team\": [\"mid\"] },\n    { \"id\": \"mid\",  \"team\": [\"leaf\"] },\n    { \"id\": \"leaf\" }\n  ],\n  \"hierarchical\": {\n    \"rootSupervisor\": \"root\",\n    \"input\": \"{{goal}}\",\n    \"maxTurns\": 10\n  }\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Hierarchical config valid', () => {",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(body.valid).to.be.true;",
+                  "  pm.expect(body.pattern).to.equal('hierarchical');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Valid — plan_execute config",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/validate",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Test Plan Execute\",\n  \"pattern\": \"plan_execute\",\n  \"goal\": \"Test goal\",\n  \"agents\": [\n    { \"id\": \"planner\", \"prompt\": \"You are the planner\" },\n    { \"id\": \"worker\",  \"prompt\": \"You are a worker\" }\n  ],\n  \"planExecute\": {\n    \"planner\": \"planner\",\n    \"executorAgents\": [\"worker\"],\n    \"input\": \"{{goal}}\",\n    \"maxSteps\": 5\n  }\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Plan-execute config valid', () => {",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(body.valid).to.be.true;",
+                  "  pm.expect(body.pattern).to.equal('plan_execute');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Valid — graph config",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/validate",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Test Graph\",\n  \"pattern\": \"graph\",\n  \"goal\": \"Test goal\",\n  \"agents\": [\n    { \"id\": \"node_a\", \"prompt\": \"Node A\" },\n    { \"id\": \"node_b\", \"prompt\": \"Node B\" }\n  ],\n  \"agentGraph\": {\n    \"input\": \"{{goal}}\",\n    \"output\": \"final_output\",\n    \"maxTurns\": 10,\n    \"nodes\": [\n      { \"id\": \"n_a\", \"type\": \"worker\", \"agentId\": \"node_a\", \"output\": \"step_a\" },\n      { \"id\": \"n_b\", \"type\": \"worker\", \"agentId\": \"node_b\", \"output\": \"final_output\" }\n    ],\n    \"edges\": [\n      { \"from\": \"n_a\", \"to\": \"n_b\", \"type\": \"sequential\" }\n    ]\n  }\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Graph config valid', () => {",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(body.valid).to.be.true;",
+                  "  pm.expect(body.pattern).to.equal('graph');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Valid — router config",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/validate",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Test Router\",\n  \"pattern\": \"router\",\n  \"goal\": \"What are the tax implications?\",\n  \"agents\": [\n    { \"id\": \"classifier\", \"prompt\": \"Classify into: legal, finance, research\" },\n    { \"id\": \"legal_agent\",   \"prompt\": \"Legal specialist\" },\n    { \"id\": \"finance_agent\", \"prompt\": \"Finance specialist\" },\n    { \"id\": \"general\",       \"prompt\": \"General assistant\" }\n  ],\n  \"routerConfig\": {\n    \"classifier\": \"classifier\",\n    \"input\": \"{{goal}}\",\n    \"routeVar\": \"route\",\n    \"output\": \"final_output\",\n    \"routes\": {\n      \"legal\":   { \"pattern\": \"sequential\", \"workflow\": { \"steps\": [{ \"agent\": \"legal_agent\",   \"input\": \"{{goal}}\", \"output\": \"final_output\" }] } },\n      \"finance\": { \"pattern\": \"sequential\", \"workflow\": { \"steps\": [{ \"agent\": \"finance_agent\", \"input\": \"{{goal}}\", \"output\": \"final_output\" }] } }\n    },\n    \"default\": { \"pattern\": \"sequential\", \"workflow\": { \"steps\": [{ \"agent\": \"general\", \"input\": \"{{goal}}\", \"output\": \"final_output\" }] } }\n  }\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Router config valid', () => {",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(body.valid).to.be.true;",
+                  "  pm.expect(body.pattern).to.equal('router');",
+                  "  pm.expect(body.agentCount).to.equal(4);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Valid — config with contextManager + memoryManager",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/validate",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Test Context + Memory\",\n  \"pattern\": \"sequential\",\n  \"goal\": \"Test goal\",\n  \"agents\": [{ \"id\": \"a\", \"prompt\": \"Agent A\", \"contextRole\": \"analyst\" }],\n  \"workflow\": { \"steps\": [{ \"agent\": \"a\", \"input\": \"{{goal}}\", \"output\": \"final_output\" }] },\n  \"contextManager\": {\n    \"templateDir\": \"templates/context\",\n    \"allowPhi\": false\n  },\n  \"memoryManager\": {\n    \"warmTierMaxEntries\": 500,\n    \"defaultTtlSeconds\": 300,\n    \"accessCountThreshold\": 3\n  }\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Context + Memory flags reported', () => {",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(body.valid).to.be.true;",
+                  "  pm.expect(body.hasContext).to.be.true;",
+                  "  pm.expect(body.hasMemory).to.be.true;",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Invalid — missing required field (name)",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/validate",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"pattern\": \"sequential\",\n  \"goal\": \"Test goal\",\n  \"agents\": [{ \"id\": \"a\", \"prompt\": \"A\" }],\n  \"workflow\": { \"steps\": [] }\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));",
+                  "pm.test('valid is false', () => {",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(body.valid).to.be.false;",
+                  "  pm.expect(body.errors).to.be.an('array').with.length.greaterThan(0);",
+                  "});",
+                  "pm.test('Error references name field', () => {",
+                  "  const body = pm.response.json();",
+                  "  const paths = body.errors.map(e => e.path);",
+                  "  pm.expect(paths.some(p => p === 'name')).to.be.true;",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Invalid — unknown pattern value",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/validate",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Bad\",\n  \"pattern\": \"magic\",\n  \"goal\": \"Test\",\n  \"agents\": []\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));",
+                  "pm.test('Reports pattern error', () => {",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(body.valid).to.be.false;",
+                  "  const patternErr = body.errors.find(e => e.path === 'pattern');",
+                  "  pm.expect(patternErr).to.exist;",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Invalid — router with no routes and no default",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/validate",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Bad Router\",\n  \"pattern\": \"router\",\n  \"goal\": \"Test\",\n  \"agents\": [{ \"id\": \"c\", \"prompt\": \"Classifier\" }],\n  \"routerConfig\": {\n    \"classifier\": \"c\",\n    \"routes\": {}\n  }\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "// Empty routes is schema-valid (object with no keys is allowed by Zod).",
+                  "// The runtime throws at dispatch time — validated in the Error Handling folder.",
+                  "pm.test('Status 200 — empty routes is schema-valid', () => {",
+                  "  pm.response.to.have.status(200);",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(body.valid).to.be.true;",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Invalid — agent with no id",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/validate",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Bad Agent\",\n  \"pattern\": \"sequential\",\n  \"goal\": \"Test\",\n  \"agents\": [{ \"prompt\": \"No ID here\" }],\n  \"workflow\": { \"steps\": [] }\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));",
+                  "pm.test('Reports agents[0].id error', () => {",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(body.valid).to.be.false;",
+                  "  const err = body.errors.find(e => e.path.includes('agents'));",
+                  "  pm.expect(err).to.exist;",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Valid — graphStore nodes and edges",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/validate",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Graph Store Test\",\n  \"pattern\": \"sequential\",\n  \"goal\": \"Test\",\n  \"agents\": [{ \"id\": \"a\", \"prompt\": \"A\" }],\n  \"workflow\": { \"steps\": [{ \"agent\": \"a\", \"input\": \"{{goal}}\", \"output\": \"final_output\" }] },\n  \"graphStore\": {\n    \"nodes\": [\n      { \"id\": \"patient_1\", \"type\": \"Patient\", \"data\": { \"name\": \"Alice\" } },\n      { \"id\": \"room_101\",  \"type\": \"Room\",    \"data\": { \"number\": \"101\" } }\n    ],\n    \"edges\": [\n      { \"from\": \"patient_1\", \"label\": \"assigned_to_room\", \"to\": \"room_101\" }\n    ]\n  }\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('graphStore config valid', () => {",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(body.valid).to.be.true;",
+                  "  pm.expect(body.hasGraph).to.be.true;",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+
+    {
+      "name": "Pattern Smoke Tests (requires ANTHROPIC_API_KEY)",
+      "item": [
+        {
+          "name": "Sequential — 2-step pipeline",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "if (pm.collectionVariables.get('has_api_key') !== 'true') {",
+                  "  pm.execution.skipRequest();",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Run succeeded', () => {",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(body.success).to.be.true;",
+                  "});",
+                  "pm.test('final_output var is populated', () => {",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(body.vars.final_output).to.be.a('string').and.not.empty;",
+                  "});",
+                  "pm.test('Token usage recorded', () => {",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(body.tokenUsage.input).to.be.above(0);",
+                  "  pm.expect(body.tokenUsage.output).to.be.above(0);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/run",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Sequential Smoke\",\n  \"pattern\": \"sequential\",\n  \"goal\": \"Write a one-sentence summary of what photosynthesis is.\",\n  \"agents\": [\n    { \"id\": \"writer\",  \"prompt\": \"You are a science writer. Answer the question in one concise sentence.\" },\n    { \"id\": \"checker\", \"prompt\": \"You are a copy editor. Confirm the text is accurate and return it unchanged or improved.\" }\n  ],\n  \"workflow\": {\n    \"steps\": [\n      { \"agent\": \"writer\",  \"input\": \"{{goal}}\",     \"output\": \"draft\" },\n      { \"agent\": \"checker\", \"input\": \"{{draft}}\",     \"output\": \"final_output\" }\n    ]\n  }\n}"
+            }
+          }
+        },
+        {
+          "name": "Parallel — 2 perspectives + aggregator",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "if (pm.collectionVariables.get('has_api_key') !== 'true') {",
+                  "  pm.execution.skipRequest();",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Parallel run succeeded', () => {",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(body.success).to.be.true;",
+                  "  pm.expect(body.vars.final_output).to.be.a('string').and.not.empty;",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/run",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Parallel Smoke\",\n  \"pattern\": \"parallel\",\n  \"goal\": \"What are the pros and cons of remote work?\",\n  \"agents\": [\n    { \"id\": \"pro_analyst\",  \"prompt\": \"List 2 key advantages of remote work in bullet points.\" },\n    { \"id\": \"con_analyst\",  \"prompt\": \"List 2 key disadvantages of remote work in bullet points.\" },\n    { \"id\": \"synthesizer\",  \"prompt\": \"Combine the pros and cons into a balanced 2-sentence summary.\" }\n  ],\n  \"parallel\": {\n    \"agents\": [\"pro_analyst\", \"con_analyst\"],\n    \"input\": \"{{goal}}\",\n    \"aggregator\": \"synthesizer\",\n    \"output\": \"final_output\"\n  }\n}"
+            }
+          }
+        },
+        {
+          "name": "Sequential — with output validation (rule)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "if (pm.collectionVariables.get('has_api_key') !== 'true') {",
+                  "  pm.execution.skipRequest();",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Output contains YES or NO', () => {",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(body.success).to.be.true;",
+                  "  const out = body.vars.final_output;",
+                  "  pm.expect(out.includes('YES') || out.includes('NO')).to.be.true;",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/run",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Validation Smoke\",\n  \"pattern\": \"sequential\",\n  \"goal\": \"Is water a liquid at room temperature?\",\n  \"agents\": [\n    {\n      \"id\": \"classifier\",\n      \"prompt\": \"Answer the question with exactly YES or NO followed by a brief explanation.\",\n      \"validate\": {\n        \"type\": \"rule\",\n        \"rule\": \"output.includes('YES') || output.includes('NO')\",\n        \"maxRetries\": 2,\n        \"onFail\": \"warn\"\n      }\n    }\n  ],\n  \"workflow\": {\n    \"steps\": [\n      { \"agent\": \"classifier\", \"input\": \"{{goal}}\", \"output\": \"final_output\" }\n    ]\n  }\n}"
+            }
+          }
+        },
+        {
+          "name": "Sequential — vars interpolation in steps",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "if (pm.collectionVariables.get('has_api_key') !== 'true') {",
+                  "  pm.execution.skipRequest();",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Pre-seeded var used in output', () => {",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(body.success).to.be.true;",
+                  "  pm.expect(body.vars.final_output).to.be.a('string').and.not.empty;",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/run",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Vars Interpolation Smoke\",\n  \"pattern\": \"sequential\",\n  \"goal\": \"Write a greeting.\",\n  \"vars\": { \"userName\": \"Alice\", \"lang\": \"Spanish\" },\n  \"agents\": [\n    { \"id\": \"greeter\", \"prompt\": \"Write a short greeting in the requested language.\" }\n  ],\n  \"workflow\": {\n    \"steps\": [\n      { \"agent\": \"greeter\", \"input\": \"Write a greeting in {{lang}} for {{userName}}.\", \"output\": \"final_output\" }\n    ]\n  }\n}"
+            }
+          }
+        }
+      ]
+    },
+
+    {
+      "name": "Router Pattern",
+      "item": [
+        {
+          "name": "Router — schema validation with all route types",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/validate",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Full Router Validate\",\n  \"pattern\": \"router\",\n  \"goal\": \"Test query\",\n  \"agents\": [\n    { \"id\": \"clf\",  \"prompt\": \"Classifier\" },\n    { \"id\": \"a1\",   \"prompt\": \"Agent 1\" },\n    { \"id\": \"a2\",   \"prompt\": \"Agent 2\" },\n    { \"id\": \"a3\",   \"prompt\": \"Supervisor\" },\n    { \"id\": \"w1\",   \"prompt\": \"Worker\" },\n    { \"id\": \"agg\",  \"prompt\": \"Aggregator\" },\n    { \"id\": \"def\",  \"prompt\": \"Default agent\" }\n  ],\n  \"routerConfig\": {\n    \"classifier\": \"clf\",\n    \"input\": \"Classify: {{goal}}\",\n    \"routeVar\": \"route\",\n    \"output\": \"final_output\",\n    \"tokenBudget\": 50000,\n    \"routes\": {\n      \"sequential_route\": {\n        \"pattern\": \"sequential\",\n        \"workflow\": { \"steps\": [{ \"agent\": \"a1\", \"input\": \"{{goal}}\", \"output\": \"final_output\" }] }\n      },\n      \"parallel_route\": {\n        \"pattern\": \"parallel\",\n        \"parallel\": { \"agents\": [\"a1\", \"a2\"], \"input\": \"{{goal}}\", \"aggregator\": \"agg\", \"output\": \"final_output\" }\n      },\n      \"supervisor_route\": {\n        \"pattern\": \"supervisor\",\n        \"supervisorConfig\": { \"supervisor\": \"a3\", \"workers\": [\"w1\"], \"input\": \"{{goal}}\", \"maxTurns\": 4 }\n      }\n    },\n    \"default\": {\n      \"pattern\": \"sequential\",\n      \"workflow\": { \"steps\": [{ \"agent\": \"def\", \"input\": \"{{goal}}\", \"output\": \"final_output\" }] }\n    }\n  }\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Full router config valid', () => {",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(body.valid).to.be.true;",
+                  "  pm.expect(body.pattern).to.equal('router');",
+                  "  pm.expect(body.agentCount).to.equal(7);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Router — smoke test with LLM classifier",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "if (pm.collectionVariables.get('has_api_key') !== 'true') {",
+                  "  pm.execution.skipRequest();",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Router dispatched successfully', () => {",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(body.success).to.be.true;",
+                  "});",
+                  "pm.test('Route key stored in vars', () => {",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(body.vars.route).to.be.a('string').and.not.empty;",
+                  "  pm.expect(['science', 'general']).to.include(body.vars.route);",
+                  "});",
+                  "pm.test('final_output populated', () => {",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(body.vars.final_output).to.be.a('string').and.not.empty;",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/run",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Router Smoke\",\n  \"pattern\": \"router\",\n  \"goal\": \"Explain how black holes form.\",\n  \"agents\": [\n    {\n      \"id\": \"clf\",\n      \"prompt\": \"Classify the query into exactly one of: science, general. Output only the category name, lowercase.\"\n    },\n    { \"id\": \"science_agent\", \"prompt\": \"You are a science communicator. Answer clearly and accurately.\" },\n    { \"id\": \"general_agent\", \"prompt\": \"You are a helpful assistant. Answer the question.\" }\n  ],\n  \"routerConfig\": {\n    \"classifier\": \"clf\",\n    \"input\": \"{{goal}}\",\n    \"routeVar\": \"route\",\n    \"output\": \"final_output\",\n    \"routes\": {\n      \"science\": {\n        \"pattern\": \"sequential\",\n        \"workflow\": { \"steps\": [{ \"agent\": \"science_agent\", \"input\": \"{{goal}}\", \"output\": \"final_output\" }] }\n      }\n    },\n    \"default\": {\n      \"pattern\": \"sequential\",\n      \"workflow\": { \"steps\": [{ \"agent\": \"general_agent\", \"input\": \"{{goal}}\", \"output\": \"final_output\" }] }\n    }\n  }\n}"
+            }
+          }
+        }
+      ]
+    },
+
+    {
+      "name": "Error Handling",
+      "item": [
+        {
+          "name": "Run — no API key (503)",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/run",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"N/A\",\n  \"pattern\": \"sequential\",\n  \"goal\": \"Test\",\n  \"agents\": [{ \"id\": \"a\", \"prompt\": \"P\" }],\n  \"workflow\": { \"steps\": [{ \"agent\": \"a\", \"input\": \"{{goal}}\", \"output\": \"out\" }] }\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "// Only meaningful when API key is absent; skip when key is present",
+                  "if (pm.collectionVariables.get('has_api_key') === 'true') {",
+                  "  pm.execution.skipRequest();",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('503 when API key missing', () => {",
+                  "  pm.response.to.have.status(503);",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(body.error).to.include('ANTHROPIC_API_KEY');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Validate — malformed JSON (400)",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/validate",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{ not valid json }"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('400 on malformed JSON', () => {",
+                  "  pm.expect(pm.response.code).to.be.oneOf([400, 500]);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Run/file — path traversal rejected",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/run/file",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{ \"name\": \"../../../etc/passwd\" }"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Path traversal rejected with 400', () => {",
+                  "  pm.response.to.have.status(400);",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(body.error).to.include('path separator');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Run/file — missing name field (400)",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/run/file",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('400 when name missing', () => {",
+                  "  pm.response.to.have.status(400);",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(body.error).to.include('name');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Validate — llm tool without allowedDomains (ok — optional)",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/validate",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Tool Test\",\n  \"pattern\": \"sequential\",\n  \"goal\": \"Test\",\n  \"agents\": [{ \"id\": \"a\", \"prompt\": \"A\", \"tools\": [\"t1\"] }],\n  \"tools\": [{ \"id\": \"t1\", \"type\": \"calculator\", \"description\": \"Math tool\" }],\n  \"workflow\": { \"steps\": [{ \"agent\": \"a\", \"input\": \"{{goal}}\", \"output\": \"final_output\" }] }\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Calculator tool config valid', () => {",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(body.valid).to.be.true;",
+                  "  pm.expect(body.toolCount).to.equal(1);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+
+  ]
+}

@@ -12,6 +12,7 @@ import { runSupervisor, SupervisorResumeState } from "./patterns/supervisor.js";
 import { runParallel } from "./patterns/parallel.js";
 import { runHierarchical } from "./patterns/hierarchical.js";
 import { runPlanExecute } from "./patterns/planExecute.js";
+import { runRouter } from "./patterns/router.js";
 import { CheckpointData, loadCheckpoint, makeCheckpointWriter } from "./checkpoint.js";
 
 export interface RunOptions {
@@ -80,6 +81,9 @@ export async function runApp(
       break;
     case "graph":
       await runGraph(config.agentGraph!, agents, ctx, log);
+      break;
+    case "router":
+      await runRouter(config.routerConfig!, agents, agentConfigs, ctx, log);
       break;
   }
 

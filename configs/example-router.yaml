@@ -1,0 +1,146 @@
+name: Multi-Domain Query Router
+pattern: router
+goal: "What are the key clauses I should review in this employment contract?"
+
+llm:
+  model: claude-sonnet-4-6
+
+# ── Router configuration ────────────────────────────────────────────────────
+routerConfig:
+  classifier: query_classifier   # classifies the goal into a route key
+  input: |
+    Classify the following query into exactly one of these categories:
+    legal, research, healthcare, finance
+
+    Respond with only the category name (lowercase, no punctuation).
+
+    Query: {{goal}}
+  routeVar:    route             # stored in vars.route for downstream inspection
+  output:      final_output
+  tokenBudget: 100000
+
+  routes:
+
+    # ── legal: parallel specialist review ──────────────────────────────────
+    legal:
+      pattern: parallel
+      parallel:
+        agents:     [contract_reviewer, risk_analyst]
+        input:      "{{goal}}"
+        aggregator: legal_synthesizer
+        output:     final_output
+
+    # ── research: sequential deep-dive ────────────────────────────────────
+    research:
+      pattern: sequential
+      workflow:
+        steps:
+          - agent:  web_researcher
+            input:  "Research this thoroughly: {{goal}}"
+            output: raw_findings
+          - agent:  research_synthesizer
+            input:  "Synthesize these findings into a clear answer: {{raw_findings}}"
+            output: final_output
+
+    # ── healthcare: supervisor-coordinated clinical review ─────────────────
+    healthcare:
+      pattern: supervisor
+      supervisorConfig:
+        supervisor: medical_supervisor
+        workers:    [clinical_agent, pharmacology_agent]
+        input:      "{{goal}}"
+        maxTurns:   6
+        output:     final_output
+
+    # ── finance: sequential analysis + validation ─────────────────────────
+    finance:
+      pattern: sequential
+      workflow:
+        steps:
+          - agent:  financial_analyst
+            input:  "Analyze: {{goal}}"
+            output: analysis
+          - agent:  compliance_checker
+            input:  "Check compliance for: {{analysis}}"
+            output: final_output
+
+    # ── default: general-purpose fallback ─────────────────────────────────
+  default:
+    pattern: sequential
+    workflow:
+      steps:
+        - agent:  general_agent
+          input:  "{{goal}}"
+          output: final_output
+
+# ── Agents ──────────────────────────────────────────────────────────────────
+agents:
+  # Classifier — routes the query
+  - id: query_classifier
+    prompt: |
+      You are a query classifier. Your only job is to output one of these
+      category names: legal, research, healthcare, finance.
+      Output the single word only, nothing else.
+
+  # Legal route agents
+  - id: contract_reviewer
+    description: "Reviews contract clauses for legal compliance"
+    prompt: |
+      You are a contracts lawyer. Identify the key clauses and flag any
+      unusual or risky language in the document or query provided.
+  - id: risk_analyst
+    description: "Assesses legal risk exposure"
+    prompt: |
+      You are a legal risk analyst. Evaluate the liability exposure,
+      indemnification terms, and termination clauses described.
+  - id: legal_synthesizer
+    prompt: |
+      You are a senior legal partner. Synthesize the specialist analyses
+      into a clear, actionable summary for the client.
+
+  # Research route agents
+  - id: web_researcher
+    prompt: |
+      You are a research specialist. Gather comprehensive information
+      on the topic, citing key facts and sources.
+    tools: [web_search]
+  - id: research_synthesizer
+    prompt: |
+      You are a research editor. Turn raw research findings into a
+      clear, structured, well-reasoned answer.
+
+  # Healthcare route agents
+  - id: medical_supervisor
+    isSupervisor: true
+    description: "Coordinates clinical and pharmacology review"
+    prompt: |
+      You are a supervising physician. Coordinate the clinical and
+      pharmacology specialists to answer the patient or staff query.
+  - id: clinical_agent
+    description: "Clinical assessment specialist"
+    prompt: You are a clinical care specialist. Provide clinical guidance.
+  - id: pharmacology_agent
+    description: "Pharmacology and drug interaction specialist"
+    prompt: You are a pharmacologist. Advise on drug-related questions.
+
+  # Finance route agents
+  - id: financial_analyst
+    prompt: |
+      You are a financial analyst. Provide detailed quantitative and
+      qualitative analysis of the financial question.
+  - id: compliance_checker
+    prompt: |
+      You are a financial compliance officer. Review the analysis for
+      regulatory compliance and flag any concerns.
+
+  # Default fallback agent
+  - id: general_agent
+    prompt: |
+      You are a knowledgeable assistant. Answer the query as clearly
+      and helpfully as possible.
+
+tools:
+  - id: web_search
+    type: http_get
+    description: "Search for information on the web"
+    allowedDomains: [api.search.internal]

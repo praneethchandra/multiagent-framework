@@ -263,7 +263,38 @@ export const PatternEnum = z.enum([
   "hierarchical",
   "plan_execute",
   "graph",
+  "router",
 ]);
+
+// A single named route inside a RouterConfig. Each route declares its own
+// sub-pattern and the corresponding pattern-specific config block, so the
+// router can dispatch to any first-class pattern at runtime.
+export const RouteSchema = z.object({
+  pattern: z.enum(["sequential", "supervisor", "parallel", "hierarchical", "plan_execute"]),
+  workflow:        WorkflowSchema.optional(),
+  parallel:        ParallelConfigSchema.optional(),
+  supervisorConfig: SupervisorConfigSchema.optional(),
+  hierarchical:    HierarchicalConfigSchema.optional(),
+  planExecute:     PlanExecuteConfigSchema.optional(),
+});
+
+export const RouterConfigSchema = z.object({
+  // Agent that classifies the incoming goal/vars and writes the route key.
+  classifier:  z.string(),
+  // Template rendered and passed to the classifier as its input message.
+  input:       z.string().default("{{goal}}"),
+  // var name the classifier's output is written to; also used as the lookup
+  // key into `routes`. Defaults to "route".
+  routeVar:    z.string().default("route"),
+  // Named routes -- keys are the string values the classifier may emit.
+  routes:      z.record(z.string(), RouteSchema),
+  // Fallback route used when the classifier's output matches no key in routes.
+  default:     RouteSchema.optional(),
+  // Output var written by the selected route's final step/agent.
+  output:      z.string().default("final_output"),
+  // Token budget across classifier + selected route execution.
+  tokenBudget: z.number().optional(),
+});
 
 export const AppConfigSchema = z.object({
   name: z.string(),
@@ -282,6 +313,7 @@ export const AppConfigSchema = z.object({
   memoryManager:  MemoryManagerConfigSchema.optional(),  // opt-in warm-tier cache
   agentGraph:     AgentGraphConfigSchema.optional(),     // used by "graph" pattern
   graphStore:     GraphStoreConfigSchema.optional(),     // opt-in knowledge graph
+  routerConfig:   RouterConfigSchema.optional(),         // used by "router" pattern
   vars: z.record(z.string(), z.string()).optional(),     // pre-seed RunContext.vars
 });
 
@@ -297,6 +329,8 @@ export type ParallelConfig = z.infer<typeof ParallelConfigSchema>;
 export type SupervisorConfig = z.infer<typeof SupervisorConfigSchema>;
 export type HierarchicalConfig = z.infer<typeof HierarchicalConfigSchema>;
 export type PlanExecuteConfig = z.infer<typeof PlanExecuteConfigSchema>;
+export type RouteConfig       = z.infer<typeof RouteSchema>;
+export type RouterConfig      = z.infer<typeof RouterConfigSchema>;
 export type AppConfig         = z.infer<typeof AppConfigSchema>;
 
 export interface TokenUsage {

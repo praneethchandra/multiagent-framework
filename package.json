@@ -12,12 +12,17 @@
     "start": "node dist/index.js",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:coverage": "vitest run --coverage"
+    "test:coverage": "vitest run --coverage",
+    "server": "tsx src/server.ts",
+    "server:prod": "node dist/server.js",
+    "regression": "bash scripts/regression.sh"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.32.1",
+    "@types/express": "^5.0.6",
     "commander": "^12.1.0",
     "dotenv": "^16.4.5",
+    "express": "^5.2.1",
     "js-yaml": "^4.1.0",
     "zod": "^3.23.8"
   },
@@ -25,6 +30,7 @@
     "@types/js-yaml": "^4.0.9",
     "@types/node": "^20.14.0",
     "@vitest/coverage-v8": "^4.1.9",
+    "newman": "^6.2.2",
     "tsx": "^4.19.0",
     "typescript": "^5.5.4",
     "vitest": "^3.2.6"
