@@ -1,5 +1,5 @@
 {
-  "name": "multiagent-framework",
+  "name": "@praneethchandra/multiagent-framework",
   "version": "1.0.0",
   "description": "Config-driven multi-agent orchestration framework powered by the Claude API. Define your entire AI application in YAML — agents, patterns, context, memory, and graph topology — with zero TypeScript required.",
   "type": "module",
